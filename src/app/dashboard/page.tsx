@@ -1119,9 +1119,54 @@ export default function DashboardPage() {
                 insertedCount += rpcResult ?? batch.length;
             }
 
+            // ── ACTUALIZAR system_stock y difference en conteos existentes ──
+            // Recorre todos los count_records del inventario y actualiza el system_stock
+            // con el nuevo valor del maestro, recalculando la diferencia.
+            setUploadProgress({ step: "Actualizando stock en conteos existentes...", pct: 95 });
+            try {
+                // Traer todos los registros de conteo del inventario
+                const { data: existingRecords } = await supabase
+                    .from("count_records")
+                    .select("id, sku, counted_quantity")
+                    .eq("inventory_id", selectedInventoryId);
+
+                if (existingRecords && existingRecords.length > 0) {
+                    // Construir mapa sku -> system_stock del maestro recién subido
+                    const stockMap = new Map<string, number>();
+                    for (const [key, p] of skuMap.entries()) {
+                        stockMap.set(key, p.system_stock);
+                    }
+
+                    // Actualizar en lotes de 100
+                    const updates = existingRecords
+                        .map((r: any) => {
+                            const skuKey = normalizeText(r.sku);
+                            // Si el SKU ya no existe en el nuevo maestro, stock = 0
+                            const newStock = stockMap.get(skuKey) ?? 0;
+                            const newDiff = Number(r.counted_quantity) - newStock;
+                            const newStatus = newDiff === 0 ? "Pendiente" : "Diferencia";
+                            return { id: r.id, system_stock: newStock, difference: newDiff, status: newStatus };
+                        }) as { id: string; system_stock: number; difference: number; status: string }[];
+
+                    for (let i = 0; i < updates.length; i += 100) {
+                        const batch = updates.slice(i, i + 100);
+                        for (const upd of batch) {
+                            await supabase.from("count_records").update({
+                                system_stock: upd.system_stock,
+                                difference: upd.difference,
+                                status: upd.status,
+                            }).eq("id", upd.id);
+                        }
+                    }
+                }
+            } catch (_syncErr) {
+                // No es crítico — el maestro ya se subió correctamente
+                console.warn("No se pudo sincronizar system_stock en conteos:", _syncErr);
+            }
+
             setUploadProgress({ step: "Finalizando...", pct: 99 });
             setUploadProgress(null);
-            showMessage(`✅ Maestro cargado: ${insertedCount.toLocaleString()} productos únicos.`, "success");
+            showMessage(`✅ Maestro cargado: ${insertedCount.toLocaleString()} productos únicos. Stock actualizado en conteos existentes.`, "success");
             setMasterFile(null); setMasterFileName("");
             if (masterInputRef.current) masterInputRef.current.value = "";
             await loadAll();

@@ -341,6 +341,8 @@ export default function DashboardPage() {
     const [auditSearchText, setAuditSearchText] = useState("");
     const [auditStatusFilter, setAuditStatusFilter] = useState("todos");
     const [validadorSubTab, setValidadorSubTab] = useState<"registros" | "resumen">("registros");
+    const [recordsPage, setRecordsPage] = useState(1);
+    const RECORDS_PER_PAGE = 100;
 
     type AuditRow = {
         sku: string;
@@ -412,8 +414,11 @@ export default function DashboardPage() {
         if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
         setMessage(msg);
         setMessageType(type);
+        // Éxito: desaparece en 4s. Error: desaparece en 7s. Info: permanece hasta que el usuario lo cierre.
         if (type === "success") {
             messageTimerRef.current = setTimeout(() => setMessage(""), 4000);
+        } else if (type === "error") {
+            messageTimerRef.current = setTimeout(() => setMessage(""), 7000);
         }
     }
 
@@ -479,18 +484,36 @@ export default function DashboardPage() {
             .channel(`realtime-inventory-${selectedInventoryId}`)
             .on(
                 "postgres_changes",
-                { event: "*", schema: "public", table: "count_records", filter: `inventory_id=eq.${selectedInventoryId}` },
-                () => { loadAll(); }
+                { event: "INSERT", schema: "public", table: "count_records", filter: `inventory_id=eq.${selectedInventoryId}` },
+                (payload) => {
+                    // Inserción: agregar el nuevo registro al estado sin recargar todo
+                    setRecords((prev) => {
+                        const newRecord = payload.new as RecordRow;
+                        if (prev.some((r) => r.id === newRecord.id)) return prev;
+                        return [newRecord, ...prev];
+                    });
+                }
+            )
+            .on(
+                "postgres_changes",
+                { event: "UPDATE", schema: "public", table: "count_records", filter: `inventory_id=eq.${selectedInventoryId}` },
+                (payload) => {
+                    // Actualización: reemplazar solo el registro modificado
+                    setRecords((prev) => prev.map((r) => r.id === payload.new.id ? (payload.new as RecordRow) : r));
+                }
+            )
+            .on(
+                "postgres_changes",
+                { event: "DELETE", schema: "public", table: "count_records", filter: `inventory_id=eq.${selectedInventoryId}` },
+                (payload) => {
+                    // Eliminación: quitar solo ese registro
+                    setRecords((prev) => prev.filter((r) => r.id !== payload.old.id));
+                }
             )
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "products", filter: `inventory_id=eq.${selectedInventoryId}` },
-                () => { loadAll(); }
-            )
-            .on(
-                "postgres_changes",
-                { event: "*", schema: "public", table: "app_users" },
-                () => { loadAll(); }
+                () => { loadAll(); }  // Cambios en maestro sí requieren recarga completa
             )
             .subscribe();
 
@@ -656,7 +679,8 @@ export default function DashboardPage() {
         if (!selectedInventoryId) return;
         setAuditLoading(true);
         try {
-            const allProducts = await fetchAllProducts(selectedInventoryId);
+            // Usa los productos ya cargados en estado — evita un fetch extra de 35k filas
+            const allProducts = products.length > 0 ? products : await fetchAllProducts(selectedInventoryId);
 
             const { data: rData } = await supabase
                 .from("count_records")
@@ -824,16 +848,22 @@ export default function DashboardPage() {
         }).slice(0, 20);
     }
 
-    async function handleSearchInputChange(value: string) {
+    const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    function handleSearchInputChange(value: string) {
         setSearchValue(value);
         const cleanValue = value.trim();
         if (!cleanValue) { setSelectedProduct(null); setSearchResults([]); setMessage(""); return; }
-        const results = await searchProductsAdvanced(cleanValue);
-        if (results.length === 0) { setSelectedProduct(null); setSearchResults([]); showMessage("No se encontró el producto.", "error"); return; }
-        if (results.length === 1) { setSelectedProduct(results[0]); setSearchResults([]); showMessage("Producto encontrado correctamente.", "success"); return; }
-        setSelectedProduct(null);
-        setSearchResults(results);
-        showMessage(`Se encontraron ${results.length} productos. Selecciona uno.`, "info");
+        // Debounce: espera 350ms después de que el usuario deje de escribir antes de consultar
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = setTimeout(async () => {
+            const results = await searchProductsAdvanced(cleanValue);
+            if (results.length === 0) { setSelectedProduct(null); setSearchResults([]); showMessage("No se encontró el producto.", "error"); return; }
+            if (results.length === 1) { setSelectedProduct(results[0]); setSearchResults([]); showMessage("Producto encontrado correctamente.", "success"); return; }
+            setSelectedProduct(null);
+            setSearchResults(results);
+            showMessage(`Se encontraron ${results.length} productos. Selecciona uno.`, "info");
+        }, 350);
     }
 
     async function saveCount() {
@@ -871,7 +901,9 @@ export default function DashboardPage() {
         setLocation("");
         setQuantity("");
         showMessage("✅ Conteo guardado correctamente.", "success");
-        loadAll();
+        // Vibración haptica en móvil para confirmar el guardado sin mirar la pantalla
+        try { if (navigator.vibrate) navigator.vibrate([60, 30, 60]); } catch (_) {}
+        // No llama loadAll() — el Realtime granular ya actualizará el estado automáticamente
         const searchInput = document.querySelector("input[placeholder*='SKU']") as HTMLInputElement;
         if (searchInput) searchInput.focus();
     }
@@ -1999,7 +2031,7 @@ export default function DashboardPage() {
                             {validadorSubTab === "registros" && (
                                 <div className="space-y-4">
                                     <div className="flex flex-col sm:flex-row gap-3">
-                                        <input className="flex-1 border rounded-2xl p-3 text-sm" placeholder="Buscar..." value={searchText} onChange={(e) => setSearchText(e.target.value)} />
+                                        <input className="flex-1 border rounded-2xl p-3 text-sm" placeholder="Buscar..." value={searchText} onChange={(e) => { setSearchText(e.target.value); setRecordsPage(1); }} />
                                         <select className="border rounded-2xl p-3 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                                             <option value="todos">Todos</option>
                                             <option value="pendiente">Pendiente</option>
@@ -2029,7 +2061,7 @@ export default function DashboardPage() {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {filteredRecords.map((r) => (
+                                                {filteredRecords.slice((recordsPage - 1) * RECORDS_PER_PAGE, recordsPage * RECORDS_PER_PAGE).map((r) => (
                                                     <tr key={r.id} className={r.status === "Diferencia" ? "bg-red-50" : r.status === "Validado" || r.status === "Corregido" ? "bg-green-50" : ""}>
                                                         <td className="p-3 border font-medium">{r.sku}</td>
                                                         <td className="p-3 border">{r.description}</td>
@@ -2057,6 +2089,19 @@ export default function DashboardPage() {
                                             </tbody>
                                         </table>
                                     </div>
+                                    {/* Paginación */}
+                                    {filteredRecords.length > RECORDS_PER_PAGE && (
+                                        <div className="flex items-center justify-between gap-3 pt-2">
+                                            <span className="text-sm text-slate-500">
+                                                Mostrando {Math.min((recordsPage - 1) * RECORDS_PER_PAGE + 1, filteredRecords.length)}–{Math.min(recordsPage * RECORDS_PER_PAGE, filteredRecords.length)} de {filteredRecords.length.toLocaleString()} registros
+                                            </span>
+                                            <div className="flex gap-2">
+                                                <button className="px-3 py-2 rounded-xl border text-sm font-semibold disabled:opacity-40" disabled={recordsPage === 1} onClick={() => setRecordsPage((p) => p - 1)}>← Anterior</button>
+                                                <span className="px-3 py-2 text-sm font-semibold">Pág. {recordsPage} / {Math.ceil(filteredRecords.length / RECORDS_PER_PAGE)}</span>
+                                                <button className="px-3 py-2 rounded-xl border text-sm font-semibold disabled:opacity-40" disabled={recordsPage * RECORDS_PER_PAGE >= filteredRecords.length} onClick={() => setRecordsPage((p) => p + 1)}>Siguiente →</button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
