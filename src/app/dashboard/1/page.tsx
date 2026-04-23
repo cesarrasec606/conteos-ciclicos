@@ -403,6 +403,7 @@ export default function DashboardPage() {
     const usersInputRef = useRef<HTMLInputElement | null>(null);
     const scannerRef = useRef<any>(null);
     const scanHandledRef = useRef(false);
+    const html5QrCodeModuleRef = useRef<any>(null);
     const overlayOpenedRef = useRef(false);
     const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const scannerContainerId = "scanner-reader";
@@ -496,12 +497,19 @@ export default function DashboardPage() {
         return () => { supabase.removeChannel(channel); };
     }, [selectedInventoryId]);
 
+    // Precargar el módulo html5-qrcode al montar el componente para que la cámara abra instantáneo
+    useEffect(() => {
+        import("html5-qrcode").then((mod) => { html5QrCodeModuleRef.current = mod; }).catch(() => {});
+    }, []);
+
     useEffect(() => {
         if (!scannerTarget) return;
         let cancelled = false;
         async function startScanner() {
             try {
-                const module = await import("html5-qrcode");
+                // Usar módulo precargado si está disponible, si no cargarlo ahora
+                const module = html5QrCodeModuleRef.current ?? await import("html5-qrcode");
+                html5QrCodeModuleRef.current = module;
                 const Html5Qrcode = module.Html5Qrcode;
                 if (cancelled) return;
                 const html5QrCode = new Html5Qrcode(scannerContainerId);
@@ -509,7 +517,8 @@ export default function DashboardPage() {
                 setScannerRunning(true);
                 await html5QrCode.start(
                     { facingMode: "environment" },
-                    { fps: 8, qrbox: { width: 220, height: 120 }, aspectRatio: 1.6 },
+                    // fps 15 = lectura más rápida; qrbox más grande = detecta desde más lejos
+                    { fps: 15, qrbox: { width: 280, height: 140 }, aspectRatio: 1.7 },
                     (decodedText: string) => { applyScannedValue(decodedText); },
                     () => {}
                 );
@@ -523,8 +532,9 @@ export default function DashboardPage() {
                 setScannerTarget(null);
             }
         }
-        const timer = setTimeout(() => { startScanner(); }, 150);
-        return () => { cancelled = true; clearTimeout(timer); stopScanner(); };
+        // Sin delay — el módulo ya está precargado
+        startScanner();
+        return () => { cancelled = true; stopScanner(); };
     }, [scannerTarget]);
 
     useEffect(() => {
@@ -1390,24 +1400,25 @@ export default function DashboardPage() {
         if (!cleanText) return;
         if (scanHandledRef.current) return;
         scanHandledRef.current = true;
+
+        // Cerrar cámara inmediatamente al leer cualquier código — no importa si existe o no
+        closeScanner();
+
         if (scannerTarget === "product") {
             setSearchValue(cleanText);
             const found = await findProductForScanner(cleanText);
             if (!found) {
                 setSelectedProduct(null); setSearchResults([]);
-                showMessage(`⚠️ Código "${cleanText}" no existe en el maestro.`, "error");
-                scanHandledRef.current = false;
+                showMessage(`⚠️ Código escaneado: "${cleanText}" — no existe en el maestro.`, "error");
                 return;
             }
             setSelectedProduct(found); setSearchResults([]);
-            showMessage("Producto encontrado: " + found.sku + " - " + found.description, "success");
-            closeScanner();
+            showMessage(`✅ ${found.sku} — ${found.description}`, "success");
             return;
         }
         if (scannerTarget === "location") {
             setLocation(cleanText);
-            showMessage("Ubicación escaneada correctamente.", "success");
-            closeScanner();
+            showMessage(`📍 Ubicación: ${cleanText}`, "success");
             return;
         }
     }
