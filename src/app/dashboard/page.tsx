@@ -1002,9 +1002,21 @@ export default function DashboardPage() {
             // Leer como array de arrays para respetar el orden de columnas sin depender del encabezado
             const rawMatrix: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
             if (rawMatrix.length < 2) { showMessage("El maestro no tiene filas válidas.", "error"); return; }
-            // Columna 0 = CODIGO/SKU, 1 = DESCRIPCION, 2 = UNIDAD, 3 = COSTO, 4 = STOCK
+
+            // Detectar automáticamente la primera fila de datos reales.
+            // Se salta cualquier fila donde col A parezca un encabezado, título o esté vacía.
+            // Sin importar qué texto tenga el encabezado — siempre A=código, B=desc, C=unidad, D=costo, E=stock.
+            let dataStartRow = 0;
+            for (let i = 0; i < rawMatrix.length; i++) {
+                const colA = String(rawMatrix[i][0] ?? "").trim();
+                const colB = String(rawMatrix[i][1] ?? "").trim();
+                const looksLikeHeader = /^(cod|sku|codigo|c[oó]digo|item|art[íi]culo|producto|descripci[oó]n|descripcion)/i.test(colA);
+                const isEmpty = colA.length === 0;
+                if (!isEmpty && !looksLikeHeader && colB.length > 0) { dataStartRow = i; break; }
+            }
+
             const skuMap = new Map<string, any>();
-            for (let i = 1; i < rawMatrix.length; i++) {
+            for (let i = dataStartRow; i < rawMatrix.length; i++) {
                 const row = rawMatrix[i];
                 const rawSku = row[0];
                 const sku = cleanCode(String(rawSku ?? ""));
