@@ -63,6 +63,32 @@ type RecordRow = {
     counted_at: string;
 };
 
+type CountingSession = {
+    id: string;
+    inventory_id: string;
+    name: string;
+    description: string | null;
+    created_by: string;
+    created_by_name: string;
+    created_at: string;
+    closed_at: string | null;
+    status: "open" | "closed";
+};
+
+type SessionSummary = {
+    session: CountingSession;
+    inventory_name: string;
+    total_records: number;
+    total_skus: number;
+    ok_count: number;
+    faltantes_count: number;
+    sobrantes_count: number;
+    no_contado_count: number;
+    valued_difference: number;
+    total_counted_value: number;
+    avance_pct: number;
+};
+
 type AppUser = {
     id: string;
     username: string;
@@ -360,6 +386,17 @@ export default function DashboardPage() {
     const [auditByCode, setAuditByCode] = useState<AuditRow[]>([]);
     const [auditLoading, setAuditLoading] = useState(false);
 
+    // ── SESIONES ────────────────────────────────────────────────────────────────
+    const [sessions, setSessions] = useState<CountingSession[]>([]);
+    const [allSessionsSummary, setAllSessionsSummary] = useState<SessionSummary[]>([]);
+    const [sessionsLoading, setSessionsLoading] = useState(false);
+    const [allSessionsLoading, setAllSessionsLoading] = useState(false);
+    const [newSessionName, setNewSessionName] = useState("");
+    const [newSessionDescription, setNewSessionDescription] = useState("");
+    const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+    const [validadorSubTabMain, setValidadorSubTabMain] = useState<"sesiones" | "registros_y_resumen">("sesiones");
+    // ── FIN SESIONES ─────────────────────────────────────────────────────────────
+
     const [skuProgress, setSkuProgress] = useState<{ total: number; counted: number; pct: number }>({ total: 0, counted: 0, pct: 0 });
 
     const [newUsername, setNewUsername] = useState("");
@@ -469,6 +506,7 @@ export default function DashboardPage() {
     useEffect(() => {
         if (user && selectedInventoryId) {
             loadAll();
+            loadSessions();
             setSelectedProduct(null);
             setSearchValue("");
             setLocation("");
@@ -582,6 +620,142 @@ export default function DashboardPage() {
     }, [validadorSubTab, selectedInventoryId, records]);
 
     function clearMessage() { setMessage(""); }
+
+    // ── FUNCIONES DE SESIONES ────────────────────────────────────────────────────
+    async function loadSessions() {
+        if (!selectedInventoryId) return;
+        setSessionsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from("counting_sessions")
+                .select("*")
+                .eq("inventory_id", selectedInventoryId)
+                .order("created_at", { ascending: false });
+            if (error) { showMessage("No se pudieron cargar las sesiones: " + error.message, "error"); return; }
+            setSessions((data || []) as CountingSession[]);
+            // Activar automáticamente la primera sesión abierta
+            const openSession = ((data || []) as CountingSession[]).find(s => s.status === "open");
+            if (openSession && !activeSessionId) setActiveSessionId(openSession.id);
+        } finally {
+            setSessionsLoading(false);
+        }
+    }
+
+    async function createSession() {
+        if (!user) return;
+        if (!selectedInventoryId) { showMessage("Selecciona un inventario primero.", "error"); return; }
+        if (!newSessionName.trim()) { showMessage("Escribe un nombre para la sesión.", "error"); return; }
+        const { error } = await supabase.from("counting_sessions").insert({
+            inventory_id: selectedInventoryId,
+            name: newSessionName.trim(),
+            description: newSessionDescription.trim() || null,
+            created_by: user.id,
+            created_by_name: user.full_name,
+            created_at: new Date().toISOString(),
+            closed_at: null,
+            status: "open",
+        });
+        if (error) { showMessage("No se pudo crear la sesión: " + error.message, "error"); return; }
+        setNewSessionName("");
+        setNewSessionDescription("");
+        showMessage("✅ Sesión creada correctamente.", "success");
+        await loadSessions();
+    }
+
+    async function closeSession(session: CountingSession) {
+        const confirmClose = window.confirm(`¿Cerrar la sesión "${session.name}"? No se podrán agregar más registros a ella.`);
+        if (!confirmClose) return;
+        const { error } = await supabase.from("counting_sessions")
+            .update({ status: "closed", closed_at: new Date().toISOString() })
+            .eq("id", session.id);
+        if (error) { showMessage("No se pudo cerrar la sesión: " + error.message, "error"); return; }
+        if (activeSessionId === session.id) setActiveSessionId(null);
+        showMessage("✅ Sesión cerrada.", "success");
+        await loadSessions();
+    }
+
+    async function reopenSession(session: CountingSession) {
+        const confirmReopen = window.confirm(`¿Reabrir la sesión "${session.name}"?`);
+        if (!confirmReopen) return;
+        const { error } = await supabase.from("counting_sessions")
+            .update({ status: "open", closed_at: null })
+            .eq("id", session.id);
+        if (error) { showMessage("No se pudo reabrir la sesión: " + error.message, "error"); return; }
+        showMessage("✅ Sesión reabierta.", "success");
+        await loadSessions();
+    }
+
+    async function deleteSession(session: CountingSession) {
+        const confirmDel = window.confirm(`¿Eliminar permanentemente la sesión "${session.name}"?`);
+        if (!confirmDel) return;
+        const { error } = await supabase.from("counting_sessions").delete().eq("id", session.id);
+        if (error) { showMessage("No se pudo eliminar la sesión: " + error.message, "error"); return; }
+        if (activeSessionId === session.id) setActiveSessionId(null);
+        showMessage("✅ Sesión eliminada.", "success");
+        await loadSessions();
+    }
+
+    async function loadAllSessionsSummary() {
+        setAllSessionsLoading(true);
+        try {
+            const { data: sessData } = await supabase
+                .from("counting_sessions")
+                .select("*")
+                .order("created_at", { ascending: false });
+            const { data: invData } = await supabase.from("inventories").select("id,name");
+            const { data: recData } = await supabase
+                .from("count_records")
+                .select("session_id, sku, counted_quantity, system_stock, cost, difference, status");
+
+            const invMap = new Map<string, string>((invData || []).map((i: any) => [i.id, i.name]));
+            const recsBySess = new Map<string, any[]>();
+            for (const r of (recData || [])) {
+                if (!r.session_id) continue;
+                if (!recsBySess.has(r.session_id)) recsBySess.set(r.session_id, []);
+                recsBySess.get(r.session_id)!.push(r);
+            }
+
+            const summaries: SessionSummary[] = ((sessData || []) as CountingSession[]).map(session => {
+                const recs = recsBySess.get(session.id) || [];
+                // Agrupar por SKU
+                const skuMap = new Map<string, { counted: number; system_stock: number; cost: number }>();
+                for (const r of recs) {
+                    const key = String(r.sku || "").toLowerCase().trim();
+                    if (!skuMap.has(key)) skuMap.set(key, { counted: 0, system_stock: Number(r.system_stock || 0), cost: Number(r.cost || 0) });
+                    skuMap.get(key)!.counted += Number(r.counted_quantity || 0);
+                }
+                let ok_count = 0, faltantes_count = 0, sobrantes_count = 0;
+                let valued_difference = 0, total_counted_value = 0;
+                for (const entry of skuMap.values()) {
+                    const diff = entry.counted - entry.system_stock;
+                    if (diff === 0) ok_count++;
+                    else if (diff < 0) faltantes_count++;
+                    else sobrantes_count++;
+                    valued_difference += diff * entry.cost;
+                    total_counted_value += entry.counted * entry.cost;
+                }
+                const total_skus_with_stock = [...skuMap.values()].filter(e => e.system_stock > 0).length;
+                return {
+                    session,
+                    inventory_name: invMap.get(session.inventory_id) || session.inventory_id,
+                    total_records: recs.length,
+                    total_skus: skuMap.size,
+                    ok_count,
+                    faltantes_count,
+                    sobrantes_count,
+                    no_contado_count: 0,
+                    valued_difference,
+                    total_counted_value,
+                    avance_pct: total_skus_with_stock > 0 ? Math.round((ok_count / total_skus_with_stock) * 100) : 0,
+                };
+            });
+
+            setAllSessionsSummary(summaries);
+        } finally {
+            setAllSessionsLoading(false);
+        }
+    }
+    // ── FIN FUNCIONES DE SESIONES ────────────────────────────────────────────────
 
     // ── FIX: loadInventories ahora persiste can_access_any_inventory correctamente ──
     async function loadInventories() {
@@ -1992,6 +2166,172 @@ export default function DashboardPage() {
                 {/* ── TAB VALIDADOR ────────────────────────────────────────────── */}
                 {activeTab === "validador" && canValidate(user) && (
                     <>
+                        {/* Sub-tabs principales del validador */}
+                        <section className="bg-white rounded-2xl p-3 shadow">
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    className={`px-4 py-2 rounded-xl border font-semibold transition ${validadorSubTabMain === "sesiones" ? "bg-indigo-700 text-white border-indigo-700" : "bg-white text-indigo-700 border-indigo-300"}`}
+                                    onClick={() => { setValidadorSubTabMain("sesiones"); loadSessions(); }}
+                                >
+                                    📋 Sesiones
+                                </button>
+                                <button
+                                    className={`px-4 py-2 rounded-xl border font-semibold transition ${validadorSubTabMain === "registros_y_resumen" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-900 border-slate-300"}`}
+                                    onClick={() => setValidadorSubTabMain("registros_y_resumen")}
+                                >
+                                    📊 Registros y Resumen
+                                </button>
+                            </div>
+                        </section>
+
+                        {/* ── SUB-TAB: SESIONES ───────────────────────────────────── */}
+                        {validadorSubTabMain === "sesiones" && (
+                            <>
+                                <section className="bg-white rounded-3xl p-6 shadow space-y-6">
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-slate-900">Sesiones de conteo</h2>
+                                        <p className="text-slate-600 mt-1">Crea y gestiona sesiones (inventarios) para el inventario: <b>{currentInventory?.name || "-"}</b></p>
+                                    </div>
+
+                                    {/* Crear sesión */}
+                                    <div className="border rounded-2xl p-5 bg-slate-50 space-y-4">
+                                        <h3 className="text-lg font-bold text-slate-900">Nueva sesión</h3>
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block font-semibold mb-1 text-sm">Nombre de la sesión *</label>
+                                                <input
+                                                    className="w-full border rounded-2xl p-3"
+                                                    placeholder="Ej. Conteo ciclo 1 - Turno mañana"
+                                                    value={newSessionName}
+                                                    onChange={e => setNewSessionName(e.target.value)}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block font-semibold mb-1 text-sm">Descripción (opcional)</label>
+                                                <input
+                                                    className="w-full border rounded-2xl p-3"
+                                                    placeholder="Ej. Pasillo A y B, zona de almacén"
+                                                    value={newSessionDescription}
+                                                    onChange={e => setNewSessionDescription(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                        <button
+                                            className="px-5 py-3 rounded-2xl bg-indigo-700 hover:bg-indigo-800 text-white font-semibold"
+                                            onClick={createSession}
+                                        >
+                                            + Crear sesión
+                                        </button>
+                                    </div>
+
+                                    {/* Lista de sesiones */}
+                                    {sessionsLoading ? (
+                                        <div className="text-slate-500 text-sm">Cargando sesiones...</div>
+                                    ) : sessions.length === 0 ? (
+                                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
+                                            <p className="text-amber-800 font-semibold">No hay sesiones creadas aún para este inventario.</p>
+                                            <p className="text-sm text-amber-600 mt-1">Crea una sesión para empezar a registrar conteos.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <h3 className="text-lg font-bold text-slate-900">Sesiones del inventario <span className="text-slate-500 font-normal text-sm">({sessions.length})</span></h3>
+
+                                            {/* KPIs rápidos */}
+                                            <div className="grid grid-cols-3 gap-3">
+                                                <div className="rounded-2xl border p-4 bg-green-50 text-center">
+                                                    <div className="text-xs text-green-700">Sesiones abiertas</div>
+                                                    <div className="text-2xl font-bold text-green-800">{sessions.filter(s => s.status === "open").length}</div>
+                                                </div>
+                                                <div className="rounded-2xl border p-4 bg-slate-50 text-center">
+                                                    <div className="text-xs text-slate-600">Sesiones cerradas</div>
+                                                    <div className="text-2xl font-bold text-slate-800">{sessions.filter(s => s.status === "closed").length}</div>
+                                                </div>
+                                                <div className="rounded-2xl border p-4 bg-blue-50 text-center">
+                                                    <div className="text-xs text-blue-700">Total sesiones</div>
+                                                    <div className="text-2xl font-bold text-blue-800">{sessions.length}</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Tabla de sesiones */}
+                                            <div className="overflow-auto rounded-2xl border">
+                                                <table className="w-full text-sm">
+                                                    <thead className="bg-slate-100">
+                                                        <tr>
+                                                            <th className="p-3 border text-left">Sesión</th>
+                                                            <th className="p-3 border text-left">Descripción</th>
+                                                            <th className="p-3 border text-center">Estado</th>
+                                                            <th className="p-3 border text-left">Creado por</th>
+                                                            <th className="p-3 border text-left">Fecha inicio</th>
+                                                            <th className="p-3 border text-left">Fecha cierre</th>
+                                                            <th className="p-3 border text-center">Acciones</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {sessions.map(session => (
+                                                            <tr key={session.id} className={session.id === activeSessionId ? "bg-indigo-50" : session.status === "open" ? "bg-green-50/40" : ""}>
+                                                                <td className="p-3 border">
+                                                                    <div className="font-semibold text-slate-900">{session.name}</div>
+                                                                    {session.id === activeSessionId && (
+                                                                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700 font-semibold">▶ Activa</span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="p-3 border text-slate-600 text-xs">{session.description || <span className="italic text-slate-400">—</span>}</td>
+                                                                <td className="p-3 border text-center">
+                                                                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${session.status === "open" ? "bg-green-100 text-green-700" : "bg-slate-200 text-slate-600"}`}>
+                                                                        {session.status === "open" ? "🟢 Abierta" : "🔒 Cerrada"}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="p-3 border text-slate-700">{session.created_by_name}</td>
+                                                                <td className="p-3 border text-slate-600 text-xs">{formatDateTime(session.created_at)}</td>
+                                                                <td className="p-3 border text-slate-600 text-xs">{session.closed_at ? formatDateTime(session.closed_at) : <span className="italic text-slate-400">—</span>}</td>
+                                                                <td className="p-3 border">
+                                                                    <div className="flex flex-wrap gap-2 justify-center">
+                                                                        {session.status === "open" && session.id !== activeSessionId && (
+                                                                            <button
+                                                                                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
+                                                                                onClick={() => setActiveSessionId(session.id)}
+                                                                            >
+                                                                                Activar
+                                                                            </button>
+                                                                        )}
+                                                                        {session.status === "open" && (
+                                                                            <button
+                                                                                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
+                                                                                onClick={() => closeSession(session)}
+                                                                            >
+                                                                                Cerrar
+                                                                            </button>
+                                                                        )}
+                                                                        {session.status === "closed" && (
+                                                                            <button
+                                                                                className="px-3 py-1.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold"
+                                                                                onClick={() => reopenSession(session)}
+                                                                            >
+                                                                                Reabrir
+                                                                            </button>
+                                                                        )}
+                                                                        <button
+                                                                            className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
+                                                                            onClick={() => deleteSession(session)}
+                                                                        >
+                                                                            Eliminar
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+                                </section>
+                            </>
+                        )}
+
+                        {/* ── SUB-TAB: REGISTROS Y RESUMEN (original) ─────────────── */}
+                        {validadorSubTabMain === "registros_y_resumen" && (
+                            <>
                         <section className="bg-white rounded-3xl p-6 shadow space-y-6">
                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                                 <div>
@@ -2326,6 +2666,8 @@ export default function DashboardPage() {
                             )}
                         </section>
                     </>
+                        )}
+                    </>
                 )}
 
                 {/* ── TAB ADMIN ────────────────────────────────────────────────── */}
@@ -2342,6 +2684,144 @@ export default function DashboardPage() {
                                 <div className="rounded-2xl border p-5 bg-slate-50"><div className="text-sm text-slate-500">Usuarios</div><div className="text-2xl font-bold mt-1">{users.length}</div></div>
                                 <div className="rounded-2xl border p-5 bg-slate-50"><div className="text-sm text-slate-500">Registros</div><div className="text-2xl font-bold mt-1">{records.length}</div></div>
                             </div>
+                        </section>
+
+                        {/* ── DASHBOARD DE SESIONES ─────────────────────────────── */}
+                        <section className="bg-white rounded-3xl p-6 shadow space-y-6">
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-slate-900">📊 Dashboard de Sesiones</h2>
+                                    <p className="text-slate-600 mt-1">Resumen general de todas las sesiones de conteo en todos los inventarios.</p>
+                                </div>
+                                <button
+                                    className={`px-4 py-3 rounded-2xl font-semibold text-white ${allSessionsLoading ? "bg-slate-400 cursor-not-allowed" : "bg-indigo-700 hover:bg-indigo-800"}`}
+                                    onClick={loadAllSessionsSummary}
+                                    disabled={allSessionsLoading}
+                                >
+                                    {allSessionsLoading ? "Cargando..." : "🔄 Cargar / Actualizar"}
+                                </button>
+                            </div>
+
+                            {allSessionsLoading && (
+                                <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                                    Consultando sesiones y registros de todos los inventarios...
+                                </div>
+                            )}
+
+                            {allSessionsSummary.length > 0 && (
+                                <>
+                                    {/* KPIs globales */}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+                                        <div className="rounded-2xl border p-4 bg-slate-50 text-center">
+                                            <div className="text-xs text-slate-500">Total sesiones</div>
+                                            <div className="text-2xl font-bold text-slate-900">{allSessionsSummary.length}</div>
+                                        </div>
+                                        <div className="rounded-2xl border p-4 bg-green-50 text-center">
+                                            <div className="text-xs text-green-700">Abiertas</div>
+                                            <div className="text-2xl font-bold text-green-800">{allSessionsSummary.filter(s => s.session.status === "open").length}</div>
+                                        </div>
+                                        <div className="rounded-2xl border p-4 bg-slate-100 text-center">
+                                            <div className="text-xs text-slate-600">Cerradas</div>
+                                            <div className="text-2xl font-bold text-slate-700">{allSessionsSummary.filter(s => s.session.status === "closed").length}</div>
+                                        </div>
+                                        <div className="rounded-2xl border p-4 bg-blue-50 text-center">
+                                            <div className="text-xs text-blue-700">Total registros</div>
+                                            <div className="text-2xl font-bold text-blue-800">{allSessionsSummary.reduce((s, x) => s + x.total_records, 0).toLocaleString()}</div>
+                                        </div>
+                                        <div className="rounded-2xl border p-4 bg-red-50 text-center">
+                                            <div className="text-xs text-red-700">Total faltantes</div>
+                                            <div className="text-2xl font-bold text-red-700">{allSessionsSummary.reduce((s, x) => s + x.faltantes_count, 0)}</div>
+                                        </div>
+                                        <div className="rounded-2xl border p-4 bg-amber-50">
+                                            <div className="text-xs text-amber-700">Dif. valorizada global</div>
+                                            <div className={`text-xl font-bold mt-1 ${allSessionsSummary.reduce((s, x) => s + x.valued_difference, 0) < 0 ? "text-red-700" : "text-blue-700"}`}>
+                                                {formatMoney(allSessionsSummary.reduce((s, x) => s + x.valued_difference, 0))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Tabla de sesiones con todos los datos */}
+                                    <div className="overflow-auto rounded-2xl border">
+                                        <table className="w-full text-xs md:text-sm">
+                                            <thead className="bg-slate-100 sticky top-0">
+                                                <tr>
+                                                    <th className="p-3 border text-left">Sesión</th>
+                                                    <th className="p-3 border text-left">Inventario</th>
+                                                    <th className="p-3 border text-center">Estado</th>
+                                                    <th className="p-3 border text-left">Fecha inicio</th>
+                                                    <th className="p-3 border text-left">Fecha cierre</th>
+                                                    <th className="p-3 border text-center">Registros</th>
+                                                    <th className="p-3 border text-center">SKUs únicos</th>
+                                                    <th className="p-3 border text-center">✅ OK</th>
+                                                    <th className="p-3 border text-center">📉 Faltantes</th>
+                                                    <th className="p-3 border text-center">📈 Sobrantes</th>
+                                                    <th className="p-3 border text-center">Avance</th>
+                                                    <th className="p-3 border text-center">Val. contado</th>
+                                                    <th className="p-3 border text-center">Dif. Valorizada ERI</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {allSessionsSummary.map(summary => (
+                                                    <tr key={summary.session.id} className={summary.session.status === "open" ? "bg-green-50/40" : ""}>
+                                                        <td className="p-3 border">
+                                                            <div className="font-semibold text-slate-900">{summary.session.name}</div>
+                                                            {summary.session.description && <div className="text-xs text-slate-500">{summary.session.description}</div>}
+                                                            <div className="text-xs text-slate-400 mt-0.5">Por: {summary.session.created_by_name}</div>
+                                                        </td>
+                                                        <td className="p-3 border text-slate-700 font-medium">{summary.inventory_name}</td>
+                                                        <td className="p-3 border text-center">
+                                                            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${summary.session.status === "open" ? "bg-green-100 text-green-700" : "bg-slate-200 text-slate-600"}`}>
+                                                                {summary.session.status === "open" ? "🟢 Abierta" : "🔒 Cerrada"}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-3 border text-slate-600 text-xs">{formatDateTime(summary.session.created_at)}</td>
+                                                        <td className="p-3 border text-slate-600 text-xs">{summary.session.closed_at ? formatDateTime(summary.session.closed_at) : <span className="italic text-slate-400">—</span>}</td>
+                                                        <td className="p-3 border text-center font-semibold">{summary.total_records.toLocaleString()}</td>
+                                                        <td className="p-3 border text-center">{summary.total_skus.toLocaleString()}</td>
+                                                        <td className="p-3 border text-center text-green-700 font-semibold">{summary.ok_count}</td>
+                                                        <td className="p-3 border text-center text-red-700 font-semibold">{summary.faltantes_count}</td>
+                                                        <td className="p-3 border text-center text-blue-700 font-semibold">{summary.sobrantes_count}</td>
+                                                        <td className="p-3 border text-center">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="flex-1 bg-slate-200 rounded-full h-2 min-w-[40px]">
+                                                                    <div className="bg-green-600 h-2 rounded-full" style={{ width: `${Math.min(summary.avance_pct, 100)}%` }} />
+                                                                </div>
+                                                                <span className="text-xs font-semibold text-slate-700 shrink-0">{summary.avance_pct}%</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-3 border text-center font-semibold text-slate-800">{formatMoney(summary.total_counted_value)}</td>
+                                                        <td className={`p-3 border text-center font-bold ${summary.valued_difference < 0 ? "text-red-700" : summary.valued_difference > 0 ? "text-blue-700" : "text-green-700"}`}>
+                                                            {formatMoney(summary.valued_difference)}
+                                                            <div className="text-xs font-normal text-slate-500">{summary.valued_difference < 0 ? "📉 faltante" : summary.valued_difference > 0 ? "📈 sobrante" : "✅ cuadrado"}</div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                {/* Fila de totales */}
+                                                <tr className="bg-slate-200 font-bold text-sm">
+                                                    <td className="p-3 border" colSpan={5}>TOTAL ({allSessionsSummary.length} sesiones)</td>
+                                                    <td className="p-3 border text-center">{allSessionsSummary.reduce((s, x) => s + x.total_records, 0).toLocaleString()}</td>
+                                                    <td className="p-3 border text-center">{allSessionsSummary.reduce((s, x) => s + x.total_skus, 0).toLocaleString()}</td>
+                                                    <td className="p-3 border text-center text-green-700">{allSessionsSummary.reduce((s, x) => s + x.ok_count, 0)}</td>
+                                                    <td className="p-3 border text-center text-red-700">{allSessionsSummary.reduce((s, x) => s + x.faltantes_count, 0)}</td>
+                                                    <td className="p-3 border text-center text-blue-700">{allSessionsSummary.reduce((s, x) => s + x.sobrantes_count, 0)}</td>
+                                                    <td className="p-3 border text-center">—</td>
+                                                    <td className="p-3 border text-center">{formatMoney(allSessionsSummary.reduce((s, x) => s + x.total_counted_value, 0))}</td>
+                                                    <td className={`p-3 border text-center ${allSessionsSummary.reduce((s, x) => s + x.valued_difference, 0) < 0 ? "text-red-700" : "text-blue-700"}`}>
+                                                        {formatMoney(allSessionsSummary.reduce((s, x) => s + x.valued_difference, 0))}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                            )}
+
+                            {allSessionsSummary.length === 0 && !allSessionsLoading && (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-8 text-center">
+                                    <p className="text-slate-600 font-semibold">Haz clic en "Cargar / Actualizar" para ver el resumen de todas las sesiones.</p>
+                                    <p className="text-sm text-slate-400 mt-1">Se consultarán todos los inventarios y sesiones disponibles.</p>
+                                </div>
+                            )}
                         </section>
 
                         <section className="grid lg:grid-cols-2 gap-6">
