@@ -104,99 +104,6 @@ type AppUser = {
     can_access_any_inventory?: boolean;
 };
 
-// ── OFFLINE QUEUE TYPES ─────────────────────────────────────────────────────
-type OfflineRecord = {
-    local_id: string;       // UUID generado en cliente — clave de deduplicación
-    synced: boolean;
-    created_at_local: string;
-    inventory_id: string;
-    product_id: string;
-    sku: string;
-    barcode: string | null;
-    description: string;
-    unit: string;
-    counted_quantity: number;
-    system_stock: number;
-    difference: number;
-    location: string;
-    user_id: string;
-    user_name: string;
-    status: "Pendiente" | "Diferencia";
-    note: string;
-    cost: number;
-    counted_at: string;
-};
-
-// ── INDEXEDDB HELPERS ───────────────────────────────────────────────────────
-const DB_NAME = "wms_offline";
-const DB_VERSION = 1;
-const STORE_NAME = "pending_records";
-
-function openOfflineDB(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = (e) => {
-            const db = (e.target as IDBOpenDBRequest).result;
-            if (!db.objectStoreNames.contains(STORE_NAME)) {
-                const store = db.createObjectStore(STORE_NAME, { keyPath: "local_id" });
-                store.createIndex("synced", "synced", { unique: false });
-            }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-    });
-}
-
-async function saveOfflineRecord(record: OfflineRecord): Promise<void> {
-    const db = await openOfflineDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, "readwrite");
-        tx.objectStore(STORE_NAME).put(record);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-async function getPendingOfflineRecords(): Promise<OfflineRecord[]> {
-    const db = await openOfflineDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, "readonly");
-        const req = tx.objectStore(STORE_NAME).index("synced").getAll(IDBKeyRange.only(0));
-        req.onsuccess = () => resolve(req.result as OfflineRecord[]);
-        req.onerror = () => reject(req.error);
-    });
-}
-
-async function markOfflineRecordSynced(local_id: string): Promise<void> {
-    const db = await openOfflineDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, "readwrite");
-        const store = tx.objectStore(STORE_NAME);
-        const getReq = store.get(local_id);
-        getReq.onsuccess = () => {
-            const rec = getReq.result;
-            if (rec) { rec.synced = true; store.put(rec); }
-            resolve();
-        };
-        getReq.onerror = () => reject(getReq.error);
-    });
-}
-
-async function getAllOfflineRecords(): Promise<OfflineRecord[]> {
-    const db = await openOfflineDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, "readonly");
-        const req = tx.objectStore(STORE_NAME).getAll();
-        req.onsuccess = () => resolve(req.result as OfflineRecord[]);
-        req.onerror = () => reject(req.error);
-    });
-}
-
-function generateLocalId(): string {
-    return `local_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-// ── CONSTANTS ───────────────────────────────────────────────────────────────
 const ALL_ROLES: Role[] = ["Operario", "Validador", "Administrador"];
 
 const DEFAULT_PERMISSIONS: UserPermissions = {
@@ -448,12 +355,6 @@ export default function DashboardPage() {
     const [totalInventoryValue, setTotalInventoryValue] = useState(0);
     const [uploadProgress, setUploadProgress] = useState<{ step: string; pct: number } | null>(null);
 
-    // ── OFFLINE STATE ────────────────────────────────────────────────────────
-    const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
-    const [pendingCount, setPendingCount] = useState(0);
-    const [syncing, setSyncing] = useState(false);
-    const syncLockRef = useRef(false);
-
     const [searchValue, setSearchValue] = useState("");
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [searchResults, setSearchResults] = useState<Product[]>([]);
@@ -468,9 +369,6 @@ export default function DashboardPage() {
     const [validadorSubTab, setValidadorSubTab] = useState<"registros" | "resumen">("registros");
     const [recordsPage, setRecordsPage] = useState(1);
     const RECORDS_PER_PAGE = 100;
-
-    // ── OPERARIO MOBILE SUBTAB ───────────────────────────────────────────────
-    const [operarioSubTab, setOperarioSubTab] = useState<"conteo" | "historial">("conteo");
 
     type AuditRow = {
         sku: string;
@@ -488,7 +386,7 @@ export default function DashboardPage() {
     const [auditByCode, setAuditByCode] = useState<AuditRow[]>([]);
     const [auditLoading, setAuditLoading] = useState(false);
 
-    // ── SESIONES ────────────────────────────────────────────────────────────
+    // ── SESIONES ────────────────────────────────────────────────────────────────
     const [sessions, setSessions] = useState<CountingSession[]>([]);
     const [allSessionsSummary, setAllSessionsSummary] = useState<SessionSummary[]>([]);
     const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -497,6 +395,7 @@ export default function DashboardPage() {
     const [newSessionDescription, setNewSessionDescription] = useState("");
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [validadorSubTabMain, setValidadorSubTabMain] = useState<"sesiones" | "registros_y_resumen">("sesiones");
+    // ── FIN SESIONES ─────────────────────────────────────────────────────────────
 
     const [skuProgress, setSkuProgress] = useState<{ total: number; counted: number; pct: number }>({ total: 0, counted: 0, pct: 0 });
 
@@ -552,113 +451,11 @@ export default function DashboardPage() {
         if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
         setMessage(msg);
         setMessageType(type);
+        // Éxito: desaparece en 4s. Error: desaparece en 7s. Info: permanece hasta que el usuario lo cierre.
         if (type === "success") {
             messageTimerRef.current = setTimeout(() => setMessage(""), 4000);
         } else if (type === "error") {
             messageTimerRef.current = setTimeout(() => setMessage(""), 7000);
-        }
-    }
-
-    // ── OFFLINE: detectar conexión y sincronizar ─────────────────────────────
-    useEffect(() => {
-        function handleOnline() {
-            setIsOnline(true);
-            syncPendingRecords();
-        }
-        function handleOffline() { setIsOnline(false); }
-        window.addEventListener("online", handleOnline);
-        window.addEventListener("offline", handleOffline);
-        return () => {
-            window.removeEventListener("online", handleOnline);
-            window.removeEventListener("offline", handleOffline);
-        };
-    }, []);
-
-    // Refrescar contador de pendientes periódicamente
-    useEffect(() => {
-        refreshPendingCount();
-        const interval = setInterval(refreshPendingCount, 5000);
-        return () => clearInterval(interval);
-    }, []);
-
-    async function refreshPendingCount() {
-        try {
-            const pending = await getPendingOfflineRecords();
-            setPendingCount(pending.length);
-        } catch (_) {}
-    }
-
-    /**
-     * Sincroniza los registros guardados offline con Supabase.
-     * Lógica anti-duplicados:
-     *   1. Antes de insertar, busca en count_records si ya existe un registro
-     *      con el mismo local_id en la columna "note" (campo que usamos para guardar el local_id).
-     *      Si ya existe, simplemente lo marca como sincronizado sin insertar de nuevo.
-     *   2. Si no existe, inserta y marca como sincronizado.
-     */
-    async function syncPendingRecords() {
-        if (syncLockRef.current) return;
-        syncLockRef.current = true;
-        setSyncing(true);
-        try {
-            const pending = await getPendingOfflineRecords();
-            if (pending.length === 0) return;
-
-            let synced = 0;
-            let failed = 0;
-            for (const rec of pending) {
-                try {
-                    // Verificar si ya fue subido (deduplicación por local_id en nota)
-                    const { data: existing } = await supabase
-                        .from("count_records")
-                        .select("id")
-                        .eq("note", `__offline__${rec.local_id}`)
-                        .maybeSingle();
-
-                    if (existing) {
-                        // Ya existe en DB — solo marcar como synced localmente
-                        await markOfflineRecordSynced(rec.local_id);
-                        synced++;
-                        continue;
-                    }
-
-                    // Insertar en Supabase
-                    const { error } = await supabase.from("count_records").insert({
-                        inventory_id: rec.inventory_id,
-                        product_id: rec.product_id,
-                        sku: rec.sku,
-                        barcode: rec.barcode,
-                        description: rec.description,
-                        unit: rec.unit,
-                        counted_quantity: rec.counted_quantity,
-                        system_stock: rec.system_stock,
-                        difference: rec.difference,
-                        location: rec.location,
-                        user_id: rec.user_id,
-                        user_name: rec.user_name,
-                        status: rec.status,
-                        note: `__offline__${rec.local_id}`,
-                        cost: rec.cost,
-                        counted_at: rec.counted_at,
-                    });
-
-                    if (!error) {
-                        await markOfflineRecordSynced(rec.local_id);
-                        synced++;
-                    } else {
-                        failed++;
-                    }
-                } catch (_) {
-                    failed++;
-                }
-            }
-
-            await refreshPendingCount();
-            if (synced > 0) showMessage(`✅ Sincronizados ${synced} registros offline.`, "success");
-            if (failed > 0) showMessage(`⚠️ ${failed} registros no pudieron sincronizarse. Se reintentará.`, "error");
-        } finally {
-            syncLockRef.current = false;
-            setSyncing(false);
         }
     }
 
@@ -692,16 +489,12 @@ export default function DashboardPage() {
 
         (async () => {
             try {
-                if (navigator.onLine) {
-                    const { data, error } = await supabase
-                        .from("app_users")
-                        .select("*")
-                        .eq("id", parsed.id)
-                        .maybeSingle();
-                    applyUser((!error && data) ? data : parsed);
-                } else {
-                    applyUser(parsed);
-                }
+                const { data, error } = await supabase
+                    .from("app_users")
+                    .select("*")
+                    .eq("id", parsed.id)
+                    .maybeSingle();
+                applyUser((!error && data) ? data : parsed);
             } catch {
                 applyUser(parsed);
             }
@@ -712,12 +505,8 @@ export default function DashboardPage() {
 
     useEffect(() => {
         if (user && selectedInventoryId) {
-            if (navigator.onLine) {
-                loadAll();
-                loadSessions();
-            } else {
-                setLoading(false);
-            }
+            loadAll();
+            loadSessions();
             setSelectedProduct(null);
             setSearchValue("");
             setLocation("");
@@ -735,6 +524,7 @@ export default function DashboardPage() {
                 "postgres_changes",
                 { event: "INSERT", schema: "public", table: "count_records", filter: `inventory_id=eq.${selectedInventoryId}` },
                 (payload) => {
+                    // Inserción: agregar el nuevo registro al estado sin recargar todo
                     setRecords((prev) => {
                         const newRecord = payload.new as RecordRow;
                         if (prev.some((r) => r.id === newRecord.id)) return prev;
@@ -746,6 +536,7 @@ export default function DashboardPage() {
                 "postgres_changes",
                 { event: "UPDATE", schema: "public", table: "count_records", filter: `inventory_id=eq.${selectedInventoryId}` },
                 (payload) => {
+                    // Actualización: reemplazar solo el registro modificado
                     setRecords((prev) => prev.map((r) => r.id === payload.new.id ? (payload.new as RecordRow) : r));
                 }
             )
@@ -753,19 +544,21 @@ export default function DashboardPage() {
                 "postgres_changes",
                 { event: "DELETE", schema: "public", table: "count_records", filter: `inventory_id=eq.${selectedInventoryId}` },
                 (payload) => {
+                    // Eliminación: quitar solo ese registro
                     setRecords((prev) => prev.filter((r) => r.id !== payload.old.id));
                 }
             )
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "products", filter: `inventory_id=eq.${selectedInventoryId}` },
-                () => { if (navigator.onLine) loadAll(); }
+                () => { loadAll(); }  // Cambios en maestro sí requieren recarga completa
             )
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
     }, [selectedInventoryId]);
 
+    // Precargar el módulo html5-qrcode al montar el componente para que la cámara abra instantáneo
     useEffect(() => {
         import("html5-qrcode").then((mod) => { html5QrCodeModuleRef.current = mod; }).catch(() => {});
     }, []);
@@ -775,6 +568,7 @@ export default function DashboardPage() {
         let cancelled = false;
         async function startScanner() {
             try {
+                // Usar módulo precargado si está disponible, si no cargarlo ahora
                 const module = html5QrCodeModuleRef.current ?? await import("html5-qrcode");
                 html5QrCodeModuleRef.current = module;
                 const Html5Qrcode = module.Html5Qrcode;
@@ -784,6 +578,7 @@ export default function DashboardPage() {
                 setScannerRunning(true);
                 await html5QrCode.start(
                     { facingMode: "environment" },
+                    // fps 15 = lectura más rápida; qrbox más grande = detecta desde más lejos
                     { fps: 15, qrbox: { width: 280, height: 140 }, aspectRatio: 1.7 },
                     (decodedText: string) => { applyScannedValue(decodedText); },
                     () => {}
@@ -798,6 +593,7 @@ export default function DashboardPage() {
                 setScannerTarget(null);
             }
         }
+        // Sin delay — el módulo ya está precargado
         startScanner();
         return () => { cancelled = true; stopScanner(); };
     }, [scannerTarget]);
@@ -825,7 +621,7 @@ export default function DashboardPage() {
 
     function clearMessage() { setMessage(""); }
 
-    // ── FUNCIONES DE SESIONES ────────────────────────────────────────────────
+    // ── FUNCIONES DE SESIONES ────────────────────────────────────────────────────
     async function loadSessions() {
         if (!selectedInventoryId) return;
         setSessionsLoading(true);
@@ -837,6 +633,7 @@ export default function DashboardPage() {
                 .order("created_at", { ascending: false });
             if (error) { showMessage("No se pudieron cargar las sesiones: " + error.message, "error"); return; }
             setSessions((data || []) as CountingSession[]);
+            // Activar automáticamente la primera sesión abierta
             const openSession = ((data || []) as CountingSession[]).find(s => s.status === "open");
             if (openSession && !activeSessionId) setActiveSessionId(openSession.id);
         } finally {
@@ -920,6 +717,7 @@ export default function DashboardPage() {
 
             const summaries: SessionSummary[] = ((sessData || []) as CountingSession[]).map(session => {
                 const recs = recsBySess.get(session.id) || [];
+                // Agrupar por SKU
                 const skuMap = new Map<string, { counted: number; system_stock: number; cost: number }>();
                 for (const r of recs) {
                     const key = String(r.sku || "").toLowerCase().trim();
@@ -957,11 +755,13 @@ export default function DashboardPage() {
             setAllSessionsLoading(false);
         }
     }
+    // ── FIN FUNCIONES DE SESIONES ────────────────────────────────────────────────
 
+    // ── FIX: loadInventories ahora persiste can_access_any_inventory correctamente ──
     async function loadInventories() {
         if (!user) return;
         const { data: allData, error: allError } = await supabase.from("inventories").select("*").order("name");
-        if (allError && navigator.onLine) { showMessage("No se pudieron cargar todos los inventarios: " + allError.message, "error"); return; }
+        if (allError) { showMessage("No se pudieron cargar todos los inventarios: " + allError.message, "error"); return; }
         setAllInventories((allData || []) as Inventory[]);
         const userRoles: Role[] = user.roles || [user.role];
         const isAdmin = userRoles.includes("Administrador");
@@ -969,44 +769,43 @@ export default function DashboardPage() {
         let query = supabase.from("inventories").select("*").eq("is_active", true).order("name");
         if (!freeAccess) {
             if (!user.inventory_id) {
-                if (navigator.onLine) {
-                    const { data: freshUser } = await supabase
-                        .from("app_users").select("*").eq("id", user.id).maybeSingle();
-                    if (freshUser?.can_access_any_inventory === true) {
-                        const updated = { ...user, can_access_any_inventory: true };
-                        localStorage.setItem("session_user", JSON.stringify(updated));
-                        setUser(updated as User);
-                        const { data: allActive } = await supabase.from("inventories").select("*").eq("is_active", true).order("name");
-                        const list = (allActive || []) as Inventory[];
-                        setInventories(list);
-                        if (!list.length) { showMessage("No hay inventarios activos.", "error"); return; }
-                        const saved = localStorage.getItem(CURRENT_INVENTORY_KEY);
-                        const exists = list.find((x) => x.id === saved);
-                        const selected = exists ? exists.id : list[0].id;
-                        setSelectedInventoryId(selected);
-                        localStorage.setItem(CURRENT_INVENTORY_KEY, selected);
-                        return;
-                    }
-                    showMessage("Tu usuario no tiene inventario asignado. Contacta al administrador.", "error");
+                // Fallback: re-consultar DB por si localStorage está desactualizado
+                const { data: freshUser } = await supabase
+                    .from("app_users").select("*").eq("id", user.id).maybeSingle();
+                if (freshUser?.can_access_any_inventory === true) {
+                    const updated = { ...user, can_access_any_inventory: true };
+                    localStorage.setItem("session_user", JSON.stringify(updated));
+                    setUser(updated as User);
+                    const { data: allActive } = await supabase.from("inventories").select("*").eq("is_active", true).order("name");
+                    const list = (allActive || []) as Inventory[];
+                    setInventories(list);
+                    if (!list.length) { showMessage("No hay inventarios activos.", "error"); return; }
+                    const saved = localStorage.getItem(CURRENT_INVENTORY_KEY);
+                    const exists = list.find((x) => x.id === saved);
+                    const selected = exists ? exists.id : list[0].id;
+                    setSelectedInventoryId(selected);
+                    localStorage.setItem(CURRENT_INVENTORY_KEY, selected);
+                    return;
                 }
+                showMessage("Tu usuario no tiene inventario asignado. Contacta al administrador.", "error");
                 return;
             }
             query = query.eq("id", user.inventory_id);
         }
         const { data, error } = await query;
-        if (error && navigator.onLine) { showMessage("No se pudieron cargar los inventarios: " + error.message, "error"); return; }
+        if (error) { showMessage("No se pudieron cargar los inventarios: " + error.message, "error"); return; }
         const list = (data || []) as Inventory[];
         setInventories(list);
-        if (!list.length && navigator.onLine) { showMessage("No hay inventarios disponibles para este usuario.", "error"); return; }
+        if (!list.length) { showMessage("No hay inventarios disponibles para este usuario.", "error"); return; }
         if (freeAccess) {
             const saved = localStorage.getItem(CURRENT_INVENTORY_KEY);
             const exists = list.find((x) => x.id === saved);
-            const selected = exists ? exists.id : list[0]?.id || "";
+            const selected = exists ? exists.id : list[0].id;
             setSelectedInventoryId(selected);
             localStorage.setItem(CURRENT_INVENTORY_KEY, selected);
             return;
         }
-        const selected = list[0]?.id || "";
+        const selected = list[0].id;
         setSelectedInventoryId(selected);
         localStorage.setItem(CURRENT_INVENTORY_KEY, selected);
     }
@@ -1054,6 +853,7 @@ export default function DashboardPage() {
         if (!selectedInventoryId) return;
         setAuditLoading(true);
         try {
+            // Usa los productos ya cargados en estado — evita un fetch extra de 35k filas
             const allProducts = products.length > 0 ? products : await fetchAllProducts(selectedInventoryId);
 
             const { data: rData } = await supabase
@@ -1154,13 +954,6 @@ export default function DashboardPage() {
         const value = cleanCode(rawValue);
         if (!value) return null;
 
-        if (!navigator.onLine) {
-            const foundInMemory = products.find(p =>
-                normalizeText(p.sku) === normalizeText(value)
-            );
-            return foundInMemory || null;
-        }
-
         const { data: barcodeMatch, error: barcodeError } = await supabase
             .from("product_barcodes").select("product_id").eq("barcode", value).maybeSingle();
         if (!barcodeError && barcodeMatch?.product_id) {
@@ -1214,16 +1007,6 @@ export default function DashboardPage() {
         if (!text) return [];
         const words = text.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/).filter(Boolean);
         if (words.length === 0) return [];
-
-        // Offline: buscar en productos cargados en memoria
-        if (!navigator.onLine || products.length > 0) {
-            const results = products.filter(p => {
-                const haystack = (p.sku + " " + p.description).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                return words.every(w => haystack.includes(w));
-            }).slice(0, 20);
-            return results;
-        }
-
         let descQuery = supabase.from("products").select("*").eq("inventory_id", selectedInventoryId);
         for (const w of words) { descQuery = descQuery.ilike("description", `%${w}%`); }
         const { data: byDesc } = await descQuery.limit(300);
@@ -1245,6 +1028,7 @@ export default function DashboardPage() {
         setSearchValue(value);
         const cleanValue = value.trim();
         if (!cleanValue) { setSelectedProduct(null); setSearchResults([]); setMessage(""); return; }
+        // Debounce: espera 350ms después de que el usuario deje de escribir antes de consultar
         if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
         searchDebounceRef.current = setTimeout(async () => {
             const results = await searchProductsAdvanced(cleanValue);
@@ -1267,43 +1051,6 @@ export default function DashboardPage() {
         const systemStock = Number(selectedProduct.system_stock || 0);
         const difference = counted - systemStock;
         const status: RecordRow["status"] = difference === 0 ? "Pendiente" : "Diferencia";
-
-        if (!navigator.onLine) {
-            // Guardar offline
-            const offlineRec: OfflineRecord = {
-                local_id: generateLocalId(),
-                synced: false,
-                created_at_local: new Date().toISOString(),
-                inventory_id: selectedInventoryId,
-                product_id: selectedProduct.id,
-                sku: selectedProduct.sku,
-                barcode: null,
-                description: selectedProduct.description,
-                unit: selectedProduct.unit,
-                counted_quantity: counted,
-                system_stock: systemStock,
-                difference,
-                location: location.trim(),
-                user_id: user.id,
-                user_name: user.full_name,
-                status,
-                note: "",
-                cost: Number(selectedProduct.cost || 0),
-                counted_at: new Date().toISOString(),
-            };
-            await saveOfflineRecord(offlineRec);
-            await refreshPendingCount();
-            setSearchValue("");
-            setSelectedProduct(null);
-            setLocation("");
-            setQuantity("");
-            showMessage("📦 Guardado offline. Se subirá cuando tengas internet.", "success");
-            try { if (navigator.vibrate) navigator.vibrate([60, 30, 60]); } catch (_) {}
-            const searchInput = document.querySelector("input[placeholder*='SKU']") as HTMLInputElement;
-            if (searchInput) searchInput.focus();
-            return;
-        }
-
         const { error } = await supabase.from("count_records").insert({
             inventory_id: selectedInventoryId,
             product_id: selectedProduct.id,
@@ -1328,11 +1075,14 @@ export default function DashboardPage() {
         setLocation("");
         setQuantity("");
         showMessage("✅ Conteo guardado correctamente.", "success");
+        // Vibración haptica en móvil para confirmar el guardado sin mirar la pantalla
         try { if (navigator.vibrate) navigator.vibrate([60, 30, 60]); } catch (_) {}
+        // No llama loadAll() — el Realtime granular ya actualizará el estado automáticamente
         const searchInput = document.querySelector("input[placeholder*='SKU']") as HTMLInputElement;
         if (searchInput) searchInput.focus();
     }
 
+    // ── FIX: createUser ahora guarda can_access_any_inventory correctamente ──
     async function createUser() {
         clearMessage();
         if (!newUsername || !newPassword || !newFullName || newRoles.length === 0) {
@@ -1405,6 +1155,7 @@ export default function DashboardPage() {
         });
     }
 
+    // ── FIX PRINCIPAL: saveEditUser ahora guarda can_access_any_inventory en DB ──
     async function saveEditUser() {
         if (!editingUser) return;
         const primaryRole: Role = editUserRoles.includes("Administrador")
@@ -1464,9 +1215,13 @@ export default function DashboardPage() {
             const data = await masterFile.arrayBuffer();
             const workbook = XLSX.read(data);
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            // Leer como array de arrays para respetar el orden de columnas sin depender del encabezado
             const rawMatrix: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
             if (rawMatrix.length < 2) { showMessage("El maestro no tiene filas válidas.", "error"); return; }
 
+            // Detectar automáticamente la primera fila de datos reales.
+            // Se salta cualquier fila donde col A parezca un encabezado, título o esté vacía.
+            // Sin importar qué texto tenga el encabezado — siempre A=código, B=desc, C=unidad, D=costo, E=stock.
             let dataStartRow = 0;
             for (let i = 0; i < rawMatrix.length; i++) {
                 const colA = String(rawMatrix[i][0] ?? "").trim();
@@ -1498,9 +1253,11 @@ export default function DashboardPage() {
             }
             if (skuMap.size === 0) { showMessage("El maestro no tiene filas válidas. Verifica que el archivo tenga datos desde la fila 2 (col 1: Código, col 2: Descripción).", "error"); return; }
 
+            // Eliminar maestro anterior
             setUploadProgress({ step: "Eliminando maestro anterior...", pct: 5 });
             const { error: rpcError } = await supabase.rpc("delete_inventory_products", { inv_id: selectedInventoryId });
             if (rpcError) {
+                // Fallback manual
                 let hasMore = true;
                 while (hasMore) {
                     const { data: ids } = await supabase.from("products").select("id").eq("inventory_id", selectedInventoryId).limit(1000);
@@ -1512,6 +1269,7 @@ export default function DashboardPage() {
                 }
             }
 
+            // Insertar via RPC en lotes de 2000 — una sola llamada por lote, sin auth lock
             const uniqueProducts = Array.from(skuMap.values());
             const totalUniqueProducts = uniqueProducts.length;
             let insertedCount = 0;
@@ -1535,22 +1293,29 @@ export default function DashboardPage() {
                 insertedCount += rpcResult ?? batch.length;
             }
 
+            // ── ACTUALIZAR system_stock y difference en conteos existentes ──
+            // Recorre todos los count_records del inventario y actualiza el system_stock
+            // con el nuevo valor del maestro, recalculando la diferencia.
             setUploadProgress({ step: "Actualizando stock en conteos existentes...", pct: 95 });
             try {
+                // Traer todos los registros de conteo del inventario
                 const { data: existingRecords } = await supabase
                     .from("count_records")
                     .select("id, sku, counted_quantity")
                     .eq("inventory_id", selectedInventoryId);
 
                 if (existingRecords && existingRecords.length > 0) {
+                    // Construir mapa sku -> system_stock del maestro recién subido
                     const stockMap = new Map<string, number>();
                     for (const [key, p] of skuMap.entries()) {
                         stockMap.set(key, p.system_stock);
                     }
 
+                    // Actualizar en lotes de 100
                     const updates = existingRecords
                         .map((r: any) => {
                             const skuKey = normalizeText(r.sku);
+                            // Si el SKU ya no existe en el nuevo maestro, stock = 0
                             const newStock = stockMap.get(skuKey) ?? 0;
                             const newDiff = Number(r.counted_quantity) - newStock;
                             const newStatus = newDiff === 0 ? "Pendiente" : "Diferencia";
@@ -1569,6 +1334,7 @@ export default function DashboardPage() {
                     }
                 }
             } catch (_syncErr) {
+                // No es crítico — el maestro ya se subió correctamente
                 console.warn("No se pudo sincronizar system_stock en conteos:", _syncErr);
             }
 
@@ -1886,6 +1652,7 @@ export default function DashboardPage() {
         if (scanHandledRef.current) return;
         scanHandledRef.current = true;
 
+        // Cerrar cámara inmediatamente al leer cualquier código — no importa si existe o no
         closeScanner();
 
         if (scannerTarget === "product") {
@@ -2037,88 +1804,29 @@ export default function DashboardPage() {
     const editingIsAdmin = editUserRoles.includes("Administrador");
     const newIsAdmin = newRoles.includes("Administrador");
 
-    // ── SOLO OPERARIO — Vista WMS móvil ─────────────────────────────────────
-    const isOnlyOperario = user && hasRole(user, "Operario") && !canValidate(user);
-
     if (!user) return null;
 
     return (
         <main className="min-h-screen bg-slate-100 p-4 md:p-6">
             <div className="max-w-7xl mx-auto space-y-6">
 
-                {/* ── HEADER OPERARIO MÓVIL (WMS style) ──────────────────────── */}
-                {isOnlyOperario && (
-                    <header className="bg-slate-900 text-white rounded-2xl shadow-lg overflow-hidden">
-                        {/* Barra superior compacta */}
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                                <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">WMS Conteo</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {/* Indicador online/offline */}
-                                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${isOnline ? "bg-green-500/20 text-green-300" : "bg-red-500/20 text-red-300"}`}>
-                                    {isOnline ? "● En línea" : "● Sin conexión"}
-                                </span>
-                                <button onClick={logout} className="text-xs text-slate-400 hover:text-white font-medium px-2 py-1 rounded-lg hover:bg-white/10 transition">
-                                    Salir
-                                </button>
-                            </div>
-                        </div>
-                        {/* Info del operario */}
-                        <div className="px-4 py-3 flex items-center justify-between">
+                {/* Header operario */}
+                {(hasRole(user, "Operario") && !canValidate(user)) && (
+                    <section className="bg-white rounded-2xl p-4 shadow border border-slate-200">
+                        <div className="flex items-center justify-between gap-3">
                             <div>
-                                <div className="font-bold text-base leading-tight">{user.full_name}</div>
-                                <div className="text-xs text-slate-400 mt-0.5">{currentInventory?.name || "Cargando..."}</div>
+                                <div className="text-xs text-slate-500">Inventario</div>
+                                <div className="text-lg font-bold text-slate-900">{currentInventory?.name || "-"}</div>
                             </div>
-                            {/* Contador pendientes offline */}
-                            {pendingCount > 0 && (
-                                <button
-                                    onClick={syncPendingRecords}
-                                    disabled={syncing || isOnline === false}
-                                    className="flex items-center gap-2 bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs font-semibold px-3 py-2 rounded-xl"
-                                >
-                                    {syncing ? "⏫ Subiendo..." : `⚠ ${pendingCount} pendiente${pendingCount > 1 ? "s" : ""}`}
-                                </button>
-                            )}
-                        </div>
-
-                        {/* Mis registros de hoy */}
-                        <div className="px-4 pb-3 flex gap-3">
-                            <div className="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
-                                <div className="text-xs text-slate-400">Mis registros</div>
-                                <div className="text-xl font-bold">{operarioRecords.length}</div>
-                            </div>
-                            <div className="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
-                                <div className="text-xs text-slate-400">Validados</div>
-                                <div className="text-xl font-bold text-green-400">{_operarioValidatedCount}</div>
-                            </div>
-                            <div className="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
-                                <div className="text-xs text-slate-400">Offline</div>
-                                <div className={`text-xl font-bold ${pendingCount > 0 ? "text-amber-400" : "text-slate-400"}`}>{pendingCount}</div>
-                            </div>
-                        </div>
-
-                        {/* Sub-tabs WMS */}
-                        <div className="flex border-t border-white/10">
-                            <button
-                                onClick={() => setOperarioSubTab("conteo")}
-                                className={`flex-1 py-3 text-sm font-semibold transition-colors ${operarioSubTab === "conteo" ? "bg-white text-slate-900" : "text-slate-400 hover:text-white"}`}
-                            >
-                                📦 CONTEO
-                            </button>
-                            <button
-                                onClick={() => setOperarioSubTab("historial")}
-                                className={`flex-1 py-3 text-sm font-semibold transition-colors ${operarioSubTab === "historial" ? "bg-white text-slate-900" : "text-slate-400 hover:text-white"}`}
-                            >
-                                📋 MIS REGISTROS
+                            <button className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold" onClick={logout}>
+                                Salir
                             </button>
                         </div>
-                    </header>
+                    </section>
                 )}
 
                 {/* Header validador / admin */}
-                {!isOnlyOperario && (canValidate(user) || hasRole(user, "Administrador")) && (
+                {(canValidate(user) || hasRole(user, "Administrador")) && (
                     <>
                         {activeTab === "operario" && (
                             <section className="md:hidden bg-white rounded-2xl p-3 shadow border border-slate-200">
@@ -2182,7 +1890,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* Stats validador/admin */}
-                {!isOnlyOperario && (canValidate(user) || hasRole(user, "Administrador")) && (
+                {(canValidate(user) || hasRole(user, "Administrador")) && (
                     <section className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 ${activeTab === "operario" ? "hidden md:grid" : ""}`}>
                         <div className="bg-white rounded-2xl shadow p-5 border border-slate-200">
                             <div className="text-sm text-slate-500">Inventario activo</div>
@@ -2205,8 +1913,8 @@ export default function DashboardPage() {
                     </section>
                 )}
 
-                {/* Tabs para no-operarios */}
-                {!isOnlyOperario && (canCount(user) || canValidate(user)) && (
+                {/* Tabs */}
+                {(canCount(user) || canValidate(user)) && (
                     <section className="bg-white rounded-2xl p-3 shadow">
                         <div className="flex flex-wrap gap-2">
                             {canCount(user) && (
@@ -2233,206 +1941,8 @@ export default function DashboardPage() {
                     </section>
                 )}
 
-                {/* ══════════════════════════════════════════════════════════════
-                    TAB OPERARIO — VISTA WMS MÓVIL (solo operarios puros)
-                ══════════════════════════════════════════════════════════════ */}
-                {isOnlyOperario && (
-                    <>
-                        {/* ── SUB-TAB: CONTEO ─────────────────────────────────── */}
-                        {operarioSubTab === "conteo" && (
-                            <div className="space-y-3">
-                                {/* Banner sin conexión */}
-                                {!isOnline && (
-                                    <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 flex items-center gap-3">
-                                        <span className="text-amber-600 text-lg">📡</span>
-                                        <div>
-                                            <div className="font-semibold text-amber-800 text-sm">Modo sin conexión</div>
-                                            <div className="text-xs text-amber-600">Los conteos se guardan localmente y se subirán al recuperar internet.</div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Paso 1 — Producto */}
-                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                    <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center gap-2">
-                                        <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">1</span>
-                                        <span className="font-semibold text-sm uppercase tracking-wide">Producto / Código de barra</span>
-                                    </div>
-                                    <div className="p-4 space-y-3">
-                                        <div className="relative">
-                                            <input
-                                                className="w-full border-2 rounded-xl p-3 pr-14 text-slate-900 bg-white text-base focus:border-slate-700 focus:outline-none"
-                                                value={searchValue}
-                                                onChange={(e) => handleSearchInputChange(e.target.value)}
-                                                placeholder="SKU o descripción..."
-                                                autoFocus
-                                            />
-                                            <button type="button" onClick={() => openScanner("product")}
-                                                className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow">
-                                                <QrCode size={20} />
-                                            </button>
-                                        </div>
-
-                                        {/* Lista de resultados */}
-                                        {searchResults.length > 0 && (
-                                            <div className="rounded-xl border border-slate-200 overflow-hidden">
-                                                {searchResults.map((p) => (
-                                                    <button key={p.id} type="button"
-                                                        className="w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-slate-50 active:bg-slate-100"
-                                                        onClick={() => { setSelectedProduct(p); setSearchResults([]); showMessage("Producto seleccionado correctamente.", "success"); }}>
-                                                        <div className="font-bold text-slate-900">{p.sku}</div>
-                                                        <div className="text-sm text-slate-600">{p.description}</div>
-                                                        <div className="text-xs text-slate-400">UM: {p.unit || "-"}</div>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {/* Producto seleccionado */}
-                                        {selectedProduct && (
-                                            <div className="rounded-xl bg-green-50 border-2 border-green-400 p-4">
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <div className="space-y-1 min-w-0">
-                                                        <div className="font-bold text-green-900 text-lg leading-tight">{selectedProduct.sku}</div>
-                                                        <div className="text-sm text-green-800 font-medium leading-snug">{selectedProduct.description}</div>
-                                                        <div className="text-xs text-green-700 bg-green-100 inline-block px-2 py-0.5 rounded-full">{selectedProduct.unit || "—"}</div>
-                                                    </div>
-                                                    <span className="text-green-500 text-2xl shrink-0">✓</span>
-                                                </div>
-                                                {showSystemStock && (
-                                                    <div className="mt-2 pt-2 border-t border-green-200 text-xs text-green-700">
-                                                        Stock sistema: <span className="font-bold">{selectedProduct.system_stock}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Paso 2 — Ubicación */}
-                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                    <div className="bg-slate-700 text-white px-4 py-2.5 flex items-center gap-2">
-                                        <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">2</span>
-                                        <span className="font-semibold text-sm uppercase tracking-wide">Ubicación</span>
-                                    </div>
-                                    <div className="p-4">
-                                        <div className="relative">
-                                            <input
-                                                className="w-full border-2 rounded-xl p-3 pr-14 text-slate-900 bg-white text-base focus:border-slate-700 focus:outline-none"
-                                                value={location}
-                                                onChange={(e) => setLocation(e.target.value)}
-                                                placeholder="Ej: A-01-02"
-                                            />
-                                            <button type="button" onClick={() => openScanner("location")}
-                                                className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 rounded-xl bg-slate-600 text-white flex items-center justify-center shadow">
-                                                <QrCode size={20} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Paso 3 — Cantidad */}
-                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                    <div className="bg-slate-600 text-white px-4 py-2.5 flex items-center gap-2">
-                                        <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">3</span>
-                                        <span className="font-semibold text-sm uppercase tracking-wide">Cantidad física</span>
-                                    </div>
-                                    <div className="p-4">
-                                        <input
-                                            className="w-full border-2 rounded-xl p-3 text-slate-900 bg-white text-2xl font-bold text-center focus:border-slate-700 focus:outline-none"
-                                            type="number"
-                                            inputMode="numeric"
-                                            value={quantity}
-                                            onChange={(e) => setQuantity(e.target.value)}
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Botón guardar */}
-                                <button
-                                    onClick={saveCount}
-                                    className="w-full py-5 rounded-2xl font-bold text-lg shadow-lg transition-all active:scale-95 bg-slate-900 text-white"
-                                >
-                                    {isOnline ? "✓ GUARDAR CONTEO" : "📦 GUARDAR OFFLINE"}
-                                </button>
-
-                                {/* Botón limpiar */}
-                                <button
-                                    onClick={() => { setSearchValue(""); setSelectedProduct(null); setSearchResults([]); setLocation(""); setQuantity(""); setMessage(""); }}
-                                    className="w-full py-3 rounded-2xl font-semibold text-slate-700 border-2 border-slate-300 bg-white transition-all active:scale-95"
-                                >
-                                    Limpiar campos
-                                </button>
-
-                                {/* Sincronizar manualmente si hay pendientes y hay conexión */}
-                                {pendingCount > 0 && isOnline && (
-                                    <button
-                                        onClick={syncPendingRecords}
-                                        disabled={syncing}
-                                        className="w-full py-3 rounded-2xl font-semibold text-amber-800 border-2 border-amber-400 bg-amber-50 transition-all active:scale-95"
-                                    >
-                                        {syncing ? "⏫ Sincronizando..." : `⬆ Subir ${pendingCount} registro${pendingCount > 1 ? "s" : ""} offline`}
-                                    </button>
-                                )}
-                            </div>
-                        )}
-
-                        {/* ── SUB-TAB: MIS REGISTROS ──────────────────────────── */}
-                        {operarioSubTab === "historial" && (
-                            <div className="space-y-3">
-                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                    <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between">
-                                        <span className="font-semibold text-sm uppercase tracking-wide">Mis registros</span>
-                                        <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{filteredOperarioRecords.length}</span>
-                                    </div>
-                                    <div className="p-3">
-                                        <input
-                                            className="w-full border rounded-xl p-3 text-sm"
-                                            value={operarioHistorySearch}
-                                            onChange={(e) => setOperarioHistorySearch(e.target.value)}
-                                            placeholder="Buscar por SKU, descripción, ubicación..."
-                                        />
-                                    </div>
-
-                                    {filteredOperarioRecords.length === 0 ? (
-                                        <div className="px-4 pb-6 text-center text-slate-400 text-sm">No hay registros todavía.</div>
-                                    ) : (
-                                        <div className="divide-y divide-slate-100">
-                                            {filteredOperarioRecords.map((r) => (
-                                                <div key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <span className="font-bold text-slate-900 text-sm">{r.sku}</span>
-                                                            <span className={statusBadge(r.status)}>{r.status}</span>
-                                                        </div>
-                                                        <div className="text-xs text-slate-500 truncate mt-0.5">{r.description}</div>
-                                                        <div className="flex items-center gap-3 mt-1 text-xs text-slate-600">
-                                                            <span className="font-semibold">Cant: {r.counted_quantity}</span>
-                                                            {r.location && <span>📍 {r.location}</span>}
-                                                        </div>
-                                                        <div className="text-xs text-slate-400 mt-0.5">{formatDateTime(r.counted_at)}</div>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => openEdit(r)}
-                                                        className="shrink-0 px-3 py-2 rounded-xl border text-xs font-semibold hover:bg-slate-50 active:bg-slate-100"
-                                                    >
-                                                        Editar
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </>
-                )}
-
-                {/* ══════════════════════════════════════════════════════════════
-                    TAB OPERARIO — Vista para admin/validador con rol operario
-                ══════════════════════════════════════════════════════════════ */}
-                {!isOnlyOperario && activeTab === "operario" && canCount(user) && (
+                {/* ── TAB OPERARIO ─────────────────────────────────────────────── */}
+                {activeTab === "operario" && canCount(user) && (
                     <>
                         <section className="bg-white rounded-3xl p-4 md:p-6 shadow space-y-4 md:space-y-6">
                             <div className="hidden md:block">
@@ -2512,7 +2022,7 @@ export default function DashboardPage() {
                             </div>
                         </section>
 
-                        {/* Mis registros (vista no-operario) */}
+                        {/* Mis registros */}
                         <section className="bg-white rounded-3xl p-4 md:p-6 shadow space-y-4">
                             <div className="space-y-3">
                                 <div>
@@ -2605,6 +2115,51 @@ export default function DashboardPage() {
                                 </div>
                             </div>
                         </section>
+
+                        {/* Catálogo global de barcodes — solo visible en Admin */}
+                        {false && user?.role === "Administrador" && (
+                            <section className="bg-white rounded-3xl p-6 shadow space-y-4">
+                                <div>
+                                    <h3 className="text-xl font-bold text-slate-900">📦 Catálogo global de códigos de barra</h3>
+                                    <p className="text-slate-600 text-sm mt-1">Aplica a <b>todos los inventarios</b>. Sube una sola vez y actualiza cuando lo necesites.</p>
+                                    <p className="text-xs text-slate-400 mt-1">Columnas requeridas: <b>SKU</b> y <b>CODIGO_BARRA</b>. Puede tener múltiples filas por SKU.</p>
+                                </div>
+                                <div className="grid md:grid-cols-2 gap-6">
+                                    <div className="space-y-3">
+                                        <input
+                                            ref={globalBarcodesInputRef}
+                                            type="file"
+                                            accept=".xlsx,.xls"
+                                            onChange={(e) => { const f = e.target.files?.[0] || null; setGlobalBarcodesFile(f); setGlobalBarcodesFileName(f ? f.name : ""); }}
+                                        />
+                                        <div className="text-sm text-slate-500">{globalBarcodesFileName ? `📄 ${globalBarcodesFileName}` : "Ningún archivo seleccionado"}</div>
+                                        {uploadProgress && (
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-sm font-semibold text-slate-700"><span>{uploadProgress?.step}</span><span>{uploadProgress?.pct ?? 0}%</span></div>
+                                                <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden"><div className="bg-indigo-600 h-3 rounded-full transition-all duration-300" style={{ width: `${uploadProgress?.pct ?? 0}%` }} /></div>
+                                            </div>
+                                        )}
+                                        <button
+                                            className={`px-4 py-3 rounded-2xl font-semibold text-white w-full ${uploadProgress ? "bg-slate-400 cursor-not-allowed" : "bg-indigo-700 hover:bg-indigo-800"}`}
+                                            type="button" onClick={uploadGlobalBarcodes} disabled={!!uploadProgress}
+                                        >
+                                            {uploadProgress ? "Subiendo..." : "Subir / Actualizar catálogo global"}
+                                        </button>
+                                    </div>
+                                    <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
+                                        <div className="font-semibold text-slate-700 text-sm">¿Cómo funciona?</div>
+                                        <ul className="text-slate-600 space-y-1 text-xs list-disc list-inside">
+                                            <li>Sube una vez con todos los SKUs y sus códigos de barra</li>
+                                            <li>Al escanear, el sistema busca aquí, obtiene el SKU y lo vincula al producto del inventario activo</li>
+                                            <li>Puedes actualizar sin afectar ningún inventario</li>
+                                        </ul>
+                                        {globalBarcodesCount !== null && (
+                                            <div className="mt-2 text-indigo-700 font-semibold text-sm">✅ Último upload: {globalBarcodesCount?.toLocaleString()} códigos</div>
+                                        )}
+                                    </div>
+                                </div>
+                            </section>
+                        )}
                     </>
                 )}
 
@@ -2681,6 +2236,7 @@ export default function DashboardPage() {
                                         <div className="space-y-3">
                                             <h3 className="text-lg font-bold text-slate-900">Sesiones del inventario <span className="text-slate-500 font-normal text-sm">({sessions.length})</span></h3>
 
+                                            {/* KPIs rápidos */}
                                             <div className="grid grid-cols-3 gap-3">
                                                 <div className="rounded-2xl border p-4 bg-green-50 text-center">
                                                     <div className="text-xs text-green-700">Sesiones abiertas</div>
@@ -2696,6 +2252,7 @@ export default function DashboardPage() {
                                                 </div>
                                             </div>
 
+                                            {/* Tabla de sesiones */}
                                             <div className="overflow-auto rounded-2xl border">
                                                 <table className="w-full text-sm">
                                                     <thead className="bg-slate-100">
@@ -2728,32 +2285,33 @@ export default function DashboardPage() {
                                                                 <td className="p-3 border text-slate-600 text-xs">{formatDateTime(session.created_at)}</td>
                                                                 <td className="p-3 border text-slate-600 text-xs">{session.closed_at ? formatDateTime(session.closed_at) : <span className="italic text-slate-400">—</span>}</td>
                                                                 <td className="p-3 border">
-                                                                    <div className="flex gap-2 justify-center flex-wrap">
-                                                                        {session.status === "open" ? (
-                                                                            <>
-                                                                                <button
-                                                                                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${session.id === activeSessionId ? "bg-indigo-600 text-white" : "border border-indigo-300 text-indigo-700 hover:bg-indigo-50"}`}
-                                                                                    onClick={() => setActiveSessionId(session.id)}
-                                                                                >
-                                                                                    {session.id === activeSessionId ? "▶ Activa" : "Activar"}
-                                                                                </button>
-                                                                                <button
-                                                                                    className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50"
-                                                                                    onClick={() => closeSession(session)}
-                                                                                >
-                                                                                    Cerrar
-                                                                                </button>
-                                                                            </>
-                                                                        ) : (
+                                                                    <div className="flex flex-wrap gap-2 justify-center">
+                                                                        {session.status === "open" && session.id !== activeSessionId && (
                                                                             <button
-                                                                                className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-green-300 text-green-700 hover:bg-green-50"
+                                                                                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
+                                                                                onClick={() => setActiveSessionId(session.id)}
+                                                                            >
+                                                                                Activar
+                                                                            </button>
+                                                                        )}
+                                                                        {session.status === "open" && (
+                                                                            <button
+                                                                                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
+                                                                                onClick={() => closeSession(session)}
+                                                                            >
+                                                                                Cerrar
+                                                                            </button>
+                                                                        )}
+                                                                        {session.status === "closed" && (
+                                                                            <button
+                                                                                className="px-3 py-1.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold"
                                                                                 onClick={() => reopenSession(session)}
                                                                             >
                                                                                 Reabrir
                                                                             </button>
                                                                         )}
                                                                         <button
-                                                                            className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-600 text-white hover:bg-red-700"
+                                                                            className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
                                                                             onClick={() => deleteSession(session)}
                                                                         >
                                                                             Eliminar
@@ -2771,7 +2329,7 @@ export default function DashboardPage() {
                             </>
                         )}
 
-                        {/* ── SUB-TAB: REGISTROS Y RESUMEN ─────────────────────────── */}
+                        {/* ── SUB-TAB: REGISTROS Y RESUMEN (original) ─────────────── */}
                         {validadorSubTabMain === "registros_y_resumen" && (
                             <>
                         <section className="bg-white rounded-3xl p-6 shadow space-y-6">
@@ -2916,6 +2474,7 @@ export default function DashboardPage() {
                                             </tbody>
                                         </table>
                                     </div>
+                                    {/* Paginación */}
                                     {filteredRecords.length > RECORDS_PER_PAGE && (
                                         <div className="flex items-center justify-between gap-3 pt-2">
                                             <span className="text-sm text-slate-500">
@@ -3106,7 +2665,7 @@ export default function DashboardPage() {
                                 </div>
                             )}
                         </section>
-                            </>
+                    </>
                         )}
                     </>
                 )}
@@ -3151,6 +2710,7 @@ export default function DashboardPage() {
 
                             {allSessionsSummary.length > 0 && (
                                 <>
+                                    {/* KPIs globales */}
                                     <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
                                         <div className="rounded-2xl border p-4 bg-slate-50 text-center">
                                             <div className="text-xs text-slate-500">Total sesiones</div>
@@ -3180,6 +2740,7 @@ export default function DashboardPage() {
                                         </div>
                                     </div>
 
+                                    {/* Tabla de sesiones con todos los datos */}
                                     <div className="overflow-auto rounded-2xl border">
                                         <table className="w-full text-xs md:text-sm">
                                             <thead className="bg-slate-100 sticky top-0">
@@ -3235,6 +2796,7 @@ export default function DashboardPage() {
                                                         </td>
                                                     </tr>
                                                 ))}
+                                                {/* Fila de totales */}
                                                 <tr className="bg-slate-200 font-bold text-sm">
                                                     <td className="p-3 border" colSpan={5}>TOTAL ({allSessionsSummary.length} sesiones)</td>
                                                     <td className="p-3 border text-center">{allSessionsSummary.reduce((s, x) => s + x.total_records, 0).toLocaleString()}</td>
@@ -3424,9 +2986,10 @@ export default function DashboardPage() {
                                 <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
                                     <div className="font-semibold text-slate-700 text-sm">¿Cómo funciona?</div>
                                     <ul className="text-slate-600 space-y-1 text-xs list-disc list-inside">
-                                        <li>Sube una vez con todos los SKUs y sus códigos de barra</li>
-                                        <li>Al escanear, el sistema busca aquí, obtiene el SKU y lo vincula al producto del inventario activo</li>
-                                        <li>Puedes actualizar sin afectar ningún inventario</li>
+                                        <li>Sube el catálogo una sola vez con todos los SKUs y sus códigos de barra</li>
+                                        <li>Al escanear, el sistema busca aquí, obtiene el SKU y busca el producto en el inventario activo</li>
+                                        <li>Al subir el maestro de productos ya <b>no necesitas</b> incluir la columna CODIGO_BARRA</li>
+                                        <li>Puedes actualizar el catálogo sin afectar ningún inventario</li>
                                     </ul>
                                     {globalBarcodesCount !== null && (
                                         <div className="mt-2 text-indigo-700 font-semibold text-sm">✅ Último upload: {globalBarcodesCount?.toLocaleString()} códigos</div>
@@ -3435,9 +2998,38 @@ export default function DashboardPage() {
                             </div>
                         </section>
 
-                        {/* Tabla usuarios */}
-                        <section className="bg-white rounded-3xl p-6 shadow space-y-4">
-                            <h3 className="text-xl font-bold text-slate-900">Usuarios registrados</h3>
+                        <section className="bg-white rounded-3xl p-6 shadow">
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+                                <div>
+                                    <h3 className="text-xl font-bold text-slate-900">Maestro de productos</h3>
+                                    <p className="text-slate-600 text-sm mt-1">Inventario seleccionado: <span className="font-semibold">{currentInventory?.name || "-"}</span></p>
+                                </div>
+                                <div className="flex gap-3 items-center flex-wrap">
+                                    <div className="bg-slate-100 rounded-2xl px-4 py-2 text-center">
+                                        <div className="text-2xl font-bold text-slate-900">{totalProductCount.toLocaleString()}</div>
+                                        <div className="text-xs text-slate-500">productos cargados</div>
+                                    </div>
+                                    {totalProductCount > 0 && (
+                                        <button className={`px-4 py-2 rounded-2xl text-white font-semibold ${uploadProgress ? "bg-slate-400 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"}`} onClick={deleteMaster} disabled={!!uploadProgress}>
+                                            {uploadProgress ? "Procesando..." : "⚡ Eliminar todo el maestro"}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            {totalProductCount === 0 ? (
+                                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
+                                    <p className="text-amber-800">📦 No hay productos cargados en este inventario.</p>
+                                    <p className="text-sm text-amber-600 mt-1">Usa "Insertar maestro" para cargar productos.</p>
+                                </div>
+                            ) : (
+                                <div className="rounded-2xl bg-slate-50 p-4">
+                                    <p className="text-sm text-slate-600">✅ El inventario tiene <span className="font-bold">{totalProductCount.toLocaleString()}</span> productos cargados. Los operarios pueden escanear cualquier código de barra o SKU.</p>
+                                </div>
+                            )}
+                        </section>
+
+                        <section className="bg-white rounded-3xl p-6 shadow">
+                            <div className="mb-4"><h3 className="text-xl font-bold text-slate-900">Usuarios</h3></div>
                             <div className="overflow-auto rounded-2xl border">
                                 <table className="w-full text-sm">
                                     <thead className="bg-slate-100">
