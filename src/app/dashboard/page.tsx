@@ -489,6 +489,7 @@ export default function DashboardPage() {
     };
     const [auditByCode, setAuditByCode] = useState<AuditRow[]>([]);
     const [auditLoading, setAuditLoading] = useState(false);
+    const [auditObservations, setAuditObservations] = useState<Record<string, string>>({});
 
     // ── INFORME MODAL ────────────────────────────────────────────────────────
     const [showReportModal, setShowReportModal] = useState(false);
@@ -2013,11 +2014,13 @@ export default function DashboardPage() {
             SKU: string; DESCRIPCION: string; UNIDAD_MEDIDA: string; N_REGISTROS: number;
             STOCK_SISTEMA: number; STOCK_CONTADO: number; DIFERENCIA_UNIDAD: number;
             COSTO_UNITARIO: number; DIFERENCIA_VALORIZADA: number; STATUS: string;
+            OBSERVACION: string;
         };
         const dataRows: AuditExportRow[] = filteredAudit.map((r) => ({
             SKU: r.sku, DESCRIPCION: r.description, UNIDAD_MEDIDA: r.unit, N_REGISTROS: r.record_count,
             STOCK_SISTEMA: r.system_stock, STOCK_CONTADO: r.total_counted, DIFERENCIA_UNIDAD: r.difference,
             COSTO_UNITARIO: r.cost, DIFERENCIA_VALORIZADA: r.valued_difference, STATUS: r.status_resumen,
+            OBSERVACION: auditObservations[r.sku] || "",
         }));
         dataRows.push({
             SKU: "TOTAL", DESCRIPCION: `${filteredAudit.length} SKUs`, UNIDAD_MEDIDA: "",
@@ -2027,12 +2030,13 @@ export default function DashboardPage() {
             DIFERENCIA_UNIDAD: filteredAudit.reduce((s, r) => s + r.difference, 0),
             COSTO_UNITARIO: 0, DIFERENCIA_VALORIZADA: auditTotals.totalValuedDiff,
             STATUS: `OK:${auditTotals.totalOk} | FALTANTE:${auditTotals.totalFaltantes} | SOBRANTE:${auditTotals.totalSobrantes} | NO CONTADO:${auditTotals.totalNoContado}`,
+            OBSERVACION: "",
         });
         const ws = XLSX.utils.json_to_sheet(dataRows);
         ws["!cols"] = [
             { wch: 18 }, { wch: 40 }, { wch: 12 }, { wch: 12 },
             { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 16 },
-            { wch: 22 }, { wch: 12 },
+            { wch: 22 }, { wch: 12 }, { wch: 40 },
         ];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Resumen Auditoria");
@@ -2070,6 +2074,9 @@ export default function DashboardPage() {
             .filter(r => r.valued_difference > 0)
             .sort((a, b) => b.valued_difference - a.valued_difference)
             .slice(0, 10);
+
+        // SKUs con observación del validador
+        const skusConObservacion = auditByCode.filter(r => auditObservations[r.sku]?.trim());
 
         const barWidth = (val: number, max: number) => max === 0 ? 0 : Math.round(Math.abs(val) / max * 100);
         const maxFalt = top10Faltantes.length > 0 ? Math.abs(top10Faltantes[0].valued_difference) : 1;
@@ -2251,6 +2258,25 @@ export default function DashboardPage() {
           <td style="color:#2563eb;font-weight:700">+${r.difference}</td>
           <td style="color:#2563eb;font-weight:700">${formatMoney(r.valued_difference)}</td>
           <td><div class="bar-mini-bg"><div class="bar-mini-fill bar-sobr" style="width:${barWidth(r.valued_difference, maxSobr)}%"></div></div></td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </div>` : ""}
+
+  <!-- OBSERVACIONES DEL VALIDADOR -->
+  ${skusConObservacion.length > 0 ? `
+  <div class="section">
+    <h2>📝 Observaciones del validador</h2>
+    <table>
+      <thead><tr><th>SKU</th><th>Descripción</th><th>Status</th><th>Dif. Valor.</th><th>Observación</th></tr></thead>
+      <tbody>
+        ${skusConObservacion.map(r => `
+        <tr>
+          <td><strong>${r.sku}</strong></td>
+          <td>${r.description}</td>
+          <td style="font-weight:700;color:${r.status_resumen === 'FALTANTE' ? '#dc2626' : r.status_resumen === 'SOBRANTE' ? '#2563eb' : r.status_resumen === 'NO CONTADO' ? '#ea580c' : '#16a34a'}">${r.status_resumen}</td>
+          <td style="font-weight:700;color:${r.valued_difference < 0 ? '#dc2626' : r.valued_difference > 0 ? '#2563eb' : '#16a34a'}">${formatMoney(r.valued_difference)}</td>
+          <td style="background:#fefce8;color:#854d0e;font-style:italic">${auditObservations[r.sku] || ""}</td>
         </tr>`).join("")}
       </tbody>
     </table>
@@ -3222,6 +3248,7 @@ export default function DashboardPage() {
                                                     <th className="p-3 border text-center">Costo unit.</th>
                                                     <th className="p-3 border text-center">Dif. valorizada</th>
                                                     <th className="p-3 border text-center">Status</th>
+                                                    <th className="p-3 border text-left min-w-[160px]">Observación</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -3262,6 +3289,14 @@ export default function DashboardPage() {
                                                                 {row.status_resumen}
                                                             </span>
                                                         </td>
+                                                        <td className="p-2 border">
+                                                            <input
+                                                                className="w-full text-xs border border-transparent rounded-lg px-2 py-1.5 bg-transparent hover:bg-white hover:border-slate-300 focus:bg-white focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300 transition placeholder-slate-300"
+                                                                placeholder="Agregar observación..."
+                                                                value={auditObservations[row.sku] || ""}
+                                                                onChange={(e) => setAuditObservations(prev => ({ ...prev, [row.sku]: e.target.value }))}
+                                                            />
+                                                        </td>
                                                     </tr>
                                                 ))}
                                                 {filteredAudit.length > 0 && (
@@ -3278,11 +3313,14 @@ export default function DashboardPage() {
                                                         <td className="p-3 border text-center text-xs">
                                                             ✅{auditTotals.totalOk} 📉{auditTotals.totalFaltantes} 📈{auditTotals.totalSobrantes} 🟠{auditTotals.totalNoContado}
                                                         </td>
+                                                        <td className="p-3 border text-center text-xs text-slate-400">
+                                                            {Object.values(auditObservations).filter(Boolean).length} obs.
+                                                        </td>
                                                     </tr>
                                                 )}
                                                 {filteredAudit.length === 0 && (
                                                     <tr>
-                                                        <td className="p-6 border text-center text-slate-400" colSpan={10}>
+                                                        <td className="p-6 border text-center text-slate-400" colSpan={11}>
                                                             {auditLoading
                                                                 ? "Cargando datos..."
                                                                 : auditByCode.length === 0
