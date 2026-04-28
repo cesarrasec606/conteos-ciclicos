@@ -490,6 +490,13 @@ export default function DashboardPage() {
     const [auditByCode, setAuditByCode] = useState<AuditRow[]>([]);
     const [auditLoading, setAuditLoading] = useState(false);
 
+    // ── INFORME MODAL ────────────────────────────────────────────────────────
+    const [showReportModal, setShowReportModal] = useState(false);
+    const [reportStoreName, setReportStoreName] = useState("");
+    const [reportStoreLeader, setReportStoreLeader] = useState("");
+    const [reportWarehouseAdvisor, setReportWarehouseAdvisor] = useState("");
+    const [reportAuditorName, setReportAuditorName] = useState("");
+
     // ── SESIONES ────────────────────────────────────────────────────────────
     const [sessions, setSessions] = useState<CountingSession[]>([]);
     const [allSessionsSummary, setAllSessionsSummary] = useState<SessionSummary[]>([]);
@@ -2032,6 +2039,260 @@ export default function DashboardPage() {
         XLSX.writeFile(wb, `resumen_auditoria_${currentInventory?.name || "inventario"}.xlsx`);
     }
 
+    function generateAndOpenReport() {
+        // Determinar fecha de auditoría: última fecha de counted_at de los registros, o hoy
+        let auditDate = new Date();
+        if (records.length > 0) {
+            const lastRecord = records.reduce((latest, r) => {
+                const d = new Date(r.counted_at);
+                return d > latest ? d : latest;
+            }, new Date(records[0].counted_at));
+            auditDate = lastRecord;
+        }
+        const dateStr = auditDate.toLocaleDateString("es-PE", { year: "numeric", month: "long", day: "numeric" });
+        const invName = currentInventory?.name || "Inventario";
+
+        const totalOk = auditByCode.filter(r => r.status_resumen === "OK").length;
+        const totalFaltantes = auditByCode.filter(r => r.status_resumen === "FALTANTE").length;
+        const totalSobrantes = auditByCode.filter(r => r.status_resumen === "SOBRANTE").length;
+        const totalNoContado = auditByCode.filter(r => r.status_resumen === "NO CONTADO").length;
+        const totalValuedDiff = auditByCode.reduce((s, r) => s + r.valued_difference, 0);
+        const avancePct = skuProgress.pct;
+
+        // Top 10 mayores diferencias valorizadas negativas (faltantes)
+        const top10Faltantes = [...auditByCode]
+            .filter(r => r.valued_difference < 0)
+            .sort((a, b) => a.valued_difference - b.valued_difference)
+            .slice(0, 10);
+
+        // Top 10 sobrantes
+        const top10Sobrantes = [...auditByCode]
+            .filter(r => r.valued_difference > 0)
+            .sort((a, b) => b.valued_difference - a.valued_difference)
+            .slice(0, 10);
+
+        const barWidth = (val: number, max: number) => max === 0 ? 0 : Math.round(Math.abs(val) / max * 100);
+        const maxFalt = top10Faltantes.length > 0 ? Math.abs(top10Faltantes[0].valued_difference) : 1;
+        const maxSobr = top10Sobrantes.length > 0 ? top10Sobrantes[0].valued_difference : 1;
+
+        const statusPieTotal = totalOk + totalFaltantes + totalSobrantes + totalNoContado || 1;
+        const okPct = Math.round(totalOk / statusPieTotal * 100);
+        const faltPct = Math.round(totalFaltantes / statusPieTotal * 100);
+        const sobrPct = Math.round(totalSobrantes / statusPieTotal * 100);
+        const ncPct = Math.round(totalNoContado / statusPieTotal * 100);
+
+        const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Informe de Auditoría — ${invName}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #f1f5f9; color: #1e293b; }
+  .container { max-width: 860px; margin: 0 auto; background: #fff; }
+  /* HEADER */
+  .header { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%); color: #fff; padding: 36px 40px 28px; }
+  .header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .header .sub { font-size: 13px; color: #94a3b8; margin-bottom: 18px; }
+  .header-meta { display: flex; gap: 24px; flex-wrap: wrap; }
+  .header-meta .item { font-size: 12px; color: #cbd5e1; }
+  .header-meta .item strong { color: #fff; display: block; font-size: 13px; }
+  /* KPI GRID */
+  .kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 0; border-bottom: 1px solid #e2e8f0; }
+  .kpi { padding: 20px 16px; border-right: 1px solid #e2e8f0; text-align: center; }
+  .kpi:last-child { border-right: none; }
+  .kpi .val { font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+  .kpi .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi.green .val { color: #16a34a; } .kpi.red .val { color: #dc2626; }
+  .kpi.blue .val { color: #2563eb; } .kpi.orange .val { color: #ea580c; }
+  /* SECTION */
+  .section { padding: 28px 40px; border-bottom: 1px solid #f1f5f9; }
+  .section h2 { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
+  /* AVANCE */
+  .progress-bar-bg { background: #e2e8f0; border-radius: 99px; height: 18px; overflow: hidden; margin-bottom: 6px; }
+  .progress-bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #3b82f6, #1d4ed8); }
+  .progress-label { font-size: 12px; color: #64748b; margin-bottom: 14px; }
+  /* STATUS BARS */
+  .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .status-row .label { width: 90px; font-size: 12px; font-weight: 600; color: #475569; }
+  .status-row .bar-bg { flex: 1; background: #f1f5f9; border-radius: 4px; height: 22px; overflow: hidden; }
+  .status-row .bar-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 8px; font-size: 11px; font-weight: 700; color: #fff; }
+  .bar-ok { background: #16a34a; } .bar-falt { background: #dc2626; }
+  .bar-sobr { background: #2563eb; } .bar-nc { background: #ea580c; }
+  .status-row .count { font-size: 12px; font-weight: 700; width: 38px; text-align: right; }
+  /* DIFFERENCE BANNER */
+  .diff-banner { border-radius: 12px; padding: 18px 22px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; }
+  .diff-banner.neg { background: #fef2f2; border: 1px solid #fecaca; }
+  .diff-banner.pos { background: #eff6ff; border: 1px solid #bfdbfe; }
+  .diff-banner.zero { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .diff-banner .amount { font-size: 26px; font-weight: 800; }
+  .diff-banner.neg .amount { color: #dc2626; }
+  .diff-banner.pos .amount { color: #2563eb; }
+  .diff-banner.zero .amount { color: #16a34a; }
+  .diff-banner .desc { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .diff-banner .emoji { font-size: 36px; }
+  /* TOP TABLE */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: #f8fafc; color: #475569; font-weight: 700; padding: 8px 10px; text-align: left; border-bottom: 2px solid #e2e8f0; }
+  td { padding: 7px 10px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+  tr:last-child td { border-bottom: none; }
+  .bar-mini-bg { background: #f1f5f9; border-radius: 3px; height: 8px; margin-top: 3px; }
+  .bar-mini-fill { height: 100%; border-radius: 3px; }
+  /* SIGN SECTION */
+  .sign-section { padding: 28px 40px 36px; }
+  .sign-section h2 { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 20px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
+  .sign-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; }
+  .sign-box { text-align: center; }
+  .sign-line { border-top: 2px solid #334155; margin-bottom: 8px; margin-top: 48px; }
+  .sign-name { font-size: 13px; font-weight: 700; color: #0f172a; }
+  .sign-role { font-size: 11px; color: #64748b; margin-top: 2px; }
+  /* FOOTER */
+  .footer { background: #0f172a; color: #64748b; font-size: 11px; text-align: center; padding: 14px; }
+  @media print { body { background: #fff; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>📊 Informe de Auditoría de Inventario</h1>
+    <div class="sub">Generado automáticamente por WMS Conteo</div>
+    <div class="header-meta">
+      <div class="item"><strong>${reportStoreName || "—"}</strong>Nombre de tienda</div>
+      <div class="item"><strong>${invName}</strong>Inventario</div>
+      <div class="item"><strong>${dateStr}</strong>Fecha de auditoría</div>
+      <div class="item"><strong>${reportAuditorName || user?.full_name || "—"}</strong>Auditor</div>
+    </div>
+  </div>
+
+  <!-- KPI -->
+  <div class="kpi-grid">
+    <div class="kpi green"><div class="val">${totalOk}</div><div class="label">SKUs OK</div></div>
+    <div class="kpi red"><div class="val">${totalFaltantes}</div><div class="label">Faltantes</div></div>
+    <div class="kpi blue"><div class="val">${totalSobrantes}</div><div class="label">Sobrantes</div></div>
+    <div class="kpi orange"><div class="val">${totalNoContado}</div><div class="label">No contados</div></div>
+  </div>
+
+  <!-- AVANCE -->
+  <div class="section">
+    <h2>📈 Avance del conteo</h2>
+    <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${avancePct}%"></div></div>
+    <div class="progress-label">${avancePct}% completado — ${skuProgress.counted} de ${skuProgress.total} SKUs contados</div>
+    <div class="status-row">
+      <div class="label">OK</div>
+      <div class="bar-bg"><div class="bar-fill bar-ok" style="width:${barWidth(totalOk, statusPieTotal)}%">${okPct}%</div></div>
+      <div class="count" style="color:#16a34a">${totalOk}</div>
+    </div>
+    <div class="status-row">
+      <div class="label">Faltantes</div>
+      <div class="bar-bg"><div class="bar-fill bar-falt" style="width:${barWidth(totalFaltantes, statusPieTotal)}%">${faltPct}%</div></div>
+      <div class="count" style="color:#dc2626">${totalFaltantes}</div>
+    </div>
+    <div class="status-row">
+      <div class="label">Sobrantes</div>
+      <div class="bar-bg"><div class="bar-fill bar-sobr" style="width:${barWidth(totalSobrantes, statusPieTotal)}%">${sobrPct}%</div></div>
+      <div class="count" style="color:#2563eb">${totalSobrantes}</div>
+    </div>
+    <div class="status-row">
+      <div class="label">No contados</div>
+      <div class="bar-bg"><div class="bar-fill bar-nc" style="width:${barWidth(totalNoContado, statusPieTotal)}%">${ncPct}%</div></div>
+      <div class="count" style="color:#ea580c">${totalNoContado}</div>
+    </div>
+  </div>
+
+  <!-- DIFERENCIA VALORIZADA -->
+  <div class="section">
+    <h2>💰 Diferencia valorizada</h2>
+    <div class="diff-banner ${totalValuedDiff < 0 ? "neg" : totalValuedDiff > 0 ? "pos" : "zero"}">
+      <div>
+        <div class="amount">${formatMoney(totalValuedDiff)}</div>
+        <div class="desc">Diferencia valorizada total (contado vs sistema)</div>
+      </div>
+      <div class="emoji">${totalValuedDiff < 0 ? "📉" : totalValuedDiff > 0 ? "📈" : "✅"}</div>
+    </div>
+  </div>
+
+  <!-- TOP FALTANTES -->
+  ${top10Faltantes.length > 0 ? `
+  <div class="section">
+    <h2>⚠️ Top faltantes por valor</h2>
+    <table>
+      <thead><tr><th>SKU</th><th>Descripción</th><th>Sist.</th><th>Contado</th><th>Dif.</th><th>Dif. Valor.</th><th style="width:80px">Impacto</th></tr></thead>
+      <tbody>
+        ${top10Faltantes.map(r => `
+        <tr>
+          <td><strong>${r.sku}</strong></td>
+          <td>${r.description}</td>
+          <td>${r.system_stock}</td>
+          <td>${r.total_counted}</td>
+          <td style="color:#dc2626;font-weight:700">${r.difference}</td>
+          <td style="color:#dc2626;font-weight:700">${formatMoney(r.valued_difference)}</td>
+          <td><div class="bar-mini-bg"><div class="bar-mini-fill bar-falt" style="width:${barWidth(r.valued_difference, maxFalt)}%"></div></div></td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </div>` : ""}
+
+  <!-- TOP SOBRANTES -->
+  ${top10Sobrantes.length > 0 ? `
+  <div class="section">
+    <h2>📦 Top sobrantes por valor</h2>
+    <table>
+      <thead><tr><th>SKU</th><th>Descripción</th><th>Sist.</th><th>Contado</th><th>Dif.</th><th>Dif. Valor.</th><th style="width:80px">Impacto</th></tr></thead>
+      <tbody>
+        ${top10Sobrantes.map(r => `
+        <tr>
+          <td><strong>${r.sku}</strong></td>
+          <td>${r.description}</td>
+          <td>${r.system_stock}</td>
+          <td>${r.total_counted}</td>
+          <td style="color:#2563eb;font-weight:700">+${r.difference}</td>
+          <td style="color:#2563eb;font-weight:700">${formatMoney(r.valued_difference)}</td>
+          <td><div class="bar-mini-bg"><div class="bar-mini-fill bar-sobr" style="width:${barWidth(r.valued_difference, maxSobr)}%"></div></div></td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </div>` : ""}
+
+  <!-- FIRMAS -->
+  <div class="sign-section">
+    <h2>✍️ Firmas de conformidad</h2>
+    <div class="sign-grid">
+      <div class="sign-box">
+        <div class="sign-line"></div>
+        <div class="sign-name">${reportAuditorName || user?.full_name || "Auditor"}</div>
+        <div class="sign-role">Auditor</div>
+      </div>
+      <div class="sign-box">
+        <div class="sign-line"></div>
+        <div class="sign-name">${reportStoreLeader || "Líder de tienda"}</div>
+        <div class="sign-role">Líder de Tienda</div>
+      </div>
+      <div class="sign-box">
+        <div class="sign-line"></div>
+        <div class="sign-name">${reportWarehouseAdvisor || "Asesor de almacén"}</div>
+        <div class="sign-role">Asesor de Almacén</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">WMS Conteo — Informe generado el ${new Date().toLocaleString("es-PE")} | ${invName}</div>
+</div>
+</body>
+</html>`;
+
+        const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `informe_auditoria_${currentInventory?.name || "inventario"}_${auditDate.toISOString().slice(0,10)}.html`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setShowReportModal(false);
+    }
+
     const showSystemStock = canSeeSystemStock(user);
     const showCost = canSeeCost(user);
     const showValuedDiff = canSeeValuedDifference(user);
@@ -2876,6 +3137,12 @@ export default function DashboardPage() {
                                             >
                                                 ⬇ Descargar resumen
                                             </button>
+                                            <button
+                                                className="px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm"
+                                                onClick={() => { setReportAuditorName(user?.full_name || ""); setShowReportModal(true); }}
+                                            >
+                                                📊 Generar informe
+                                            </button>
                                         </div>
                                     </div>
 
@@ -3469,6 +3736,95 @@ export default function DashboardPage() {
                                     {torchOn ? "Apagar linterna 🔦" : "Prender linterna 🔦"}
                                 </button>
                             )}
+                        </div>
+                    </div>
+                )}
+
+                {/* ── MODAL GENERAR INFORME ─────────────────────────────────── */}
+                {showReportModal && (
+                    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-3xl p-6 w-full max-w-lg space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+                            <div>
+                                <h3 className="text-2xl font-bold text-slate-900">📊 Generar informe completo</h3>
+                                <p className="text-slate-500 text-sm mt-1">
+                                    Se generará un informe HTML con gráficos y dashboards, compatible con Gmail y cualquier navegador.
+                                </p>
+                            </div>
+
+                            <div className="rounded-2xl bg-indigo-50 border border-indigo-200 px-4 py-3 text-sm text-indigo-800">
+                                <span className="font-semibold">Inventario:</span> {currentInventory?.name || "—"}
+                                <br/>
+                                <span className="font-semibold">Fecha de auditoría:</span>{" "}
+                                {(() => {
+                                    let d = new Date();
+                                    if (records.length > 0) {
+                                        d = records.reduce((latest, r) => {
+                                            const dt = new Date(r.counted_at);
+                                            return dt > latest ? dt : latest;
+                                        }, new Date(records[0].counted_at));
+                                    }
+                                    return d.toLocaleDateString("es-PE", { year: "numeric", month: "long", day: "numeric" });
+                                })()}
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block font-semibold mb-1.5 text-sm text-slate-700">Nombre de la tienda <span className="text-red-500">*</span></label>
+                                    <input
+                                        className="w-full border rounded-2xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                        placeholder="Ej: Tienda Centro Lima"
+                                        value={reportStoreName}
+                                        onChange={(e) => setReportStoreName(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block font-semibold mb-1.5 text-sm text-slate-700">Nombre del líder de tienda <span className="text-red-500">*</span></label>
+                                    <input
+                                        className="w-full border rounded-2xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                        placeholder="Ej: Juan Pérez"
+                                        value={reportStoreLeader}
+                                        onChange={(e) => setReportStoreLeader(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block font-semibold mb-1.5 text-sm text-slate-700">Nombre del asesor de almacén <span className="text-red-500">*</span></label>
+                                    <input
+                                        className="w-full border rounded-2xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                        placeholder="Ej: María García"
+                                        value={reportWarehouseAdvisor}
+                                        onChange={(e) => setReportWarehouseAdvisor(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block font-semibold mb-1.5 text-sm text-slate-700">Nombre del auditor</label>
+                                    <input
+                                        className="w-full border rounded-2xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                        placeholder="Ej: Carlos López"
+                                        value={reportAuditorName}
+                                        onChange={(e) => setReportAuditorName(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
+                                💡 El informe se descargará como archivo <strong>.html</strong>. Puedes abrirlo en tu navegador, imprimirlo o adjuntarlo a un correo en Gmail.
+                            </div>
+
+                            <div className="flex gap-3 pt-1">
+                                <button
+                                    className="flex-1 px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                    onClick={generateAndOpenReport}
+                                    disabled={!reportStoreName.trim() || !reportStoreLeader.trim() || !reportWarehouseAdvisor.trim()}
+                                >
+                                    📥 Descargar informe
+                                </button>
+                                <button
+                                    className="flex-1 px-4 py-3 rounded-2xl border font-semibold text-sm"
+                                    onClick={() => setShowReportModal(false)}
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
