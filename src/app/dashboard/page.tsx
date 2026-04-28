@@ -104,6 +104,8 @@ type AppUser = {
     can_access_any_inventory?: boolean;
 };
 
+type SidebarItem = { key: TabKey; label: string; icon: string; show: boolean };
+
 // ── OFFLINE QUEUE TYPES ─────────────────────────────────────────────────────
 type OfflineRecord = {
     local_id: string;       // UUID generado en cliente — clave de deduplicación
@@ -2040,134 +2042,91 @@ export default function DashboardPage() {
     // ── SOLO OPERARIO — Vista WMS móvil ─────────────────────────────────────
     const isOnlyOperario = user && hasRole(user, "Operario") && !canValidate(user);
 
+    // ── SIDEBAR NAV ITEMS (PC/Desktop) ─────────────────────────────────────────
+    const sidebarItems: SidebarItem[] = !user ? [] : ([
+        { key: "operario"  as TabKey, label: "Operario",      icon: "📦", show: canCount(user) },
+        { key: "validador" as TabKey, label: "Validador",     icon: "✅", show: canValidate(user) },
+        { key: "maestro"   as TabKey, label: "Maestro",       icon: "📋", show: canValidate(user) },
+        { key: "admin"     as TabKey, label: "Administrador", icon: "🔧", show: hasRole(user, "Administrador") },
+    ] as SidebarItem[]).filter(i => i.show);
+
     if (!user) return null;
 
     return (
+        <>
+        {/* ══════════════════════════════════════════════════════════════════════
+            VISTA OPERARIO PURO — Layout móvil WMS (sin sidebar)
+        ══════════════════════════════════════════════════════════════════════ */}
+        {isOnlyOperario && (
         <main className="min-h-screen bg-slate-100 p-4 md:p-6">
             <div className="max-w-7xl mx-auto space-y-6">
 
                 {/* ── HEADER OPERARIO MÓVIL (WMS style) ──────────────────────── */}
-                {isOnlyOperario && (
-                    <header className="bg-slate-900 text-white rounded-2xl shadow-lg overflow-hidden">
-                        {/* Barra superior compacta */}
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                                <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">WMS Conteo</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {/* Indicador online/offline */}
-                                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${isOnline ? "bg-green-500/20 text-green-300" : "bg-red-500/20 text-red-300"}`}>
-                                    {isOnline ? "● En línea" : "● Sin conexión"}
-                                </span>
-                                <button onClick={logout} className="text-xs text-slate-400 hover:text-white font-medium px-2 py-1 rounded-lg hover:bg-white/10 transition">
-                                    Salir
-                                </button>
-                            </div>
+                <header className="bg-slate-900 text-white rounded-2xl shadow-lg overflow-hidden">
+                    {/* Barra superior compacta */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                            <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">WMS Conteo</span>
                         </div>
-                        {/* Info del operario */}
-                        <div className="px-4 py-3 flex items-center justify-between">
-                            <div>
-                                <div className="font-bold text-base leading-tight">{user.full_name}</div>
-                                <div className="text-xs text-slate-400 mt-0.5">{currentInventory?.name || "Cargando..."}</div>
-                            </div>
-                            {/* Contador pendientes offline */}
-                            {pendingCount > 0 && (
-                                <button
-                                    onClick={syncPendingRecords}
-                                    disabled={syncing || isOnline === false}
-                                    className="flex items-center gap-2 bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs font-semibold px-3 py-2 rounded-xl"
-                                >
-                                    {syncing ? "⏫ Subiendo..." : `⚠ ${pendingCount} pendiente${pendingCount > 1 ? "s" : ""}`}
-                                </button>
-                            )}
-                        </div>
-
-                        {/* Mis registros de hoy */}
-                        <div className="px-4 pb-3 flex gap-3">
-                            <div className="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
-                                <div className="text-xs text-slate-400">Mis registros</div>
-                                <div className="text-xl font-bold">{operarioRecords.length}</div>
-                            </div>
-                            <div className="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
-                                <div className="text-xs text-slate-400">Validados</div>
-                                <div className="text-xl font-bold text-green-400">{_operarioValidatedCount}</div>
-                            </div>
-                            <div className="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
-                                <div className="text-xs text-slate-400">Offline</div>
-                                <div className={`text-xl font-bold ${pendingCount > 0 ? "text-amber-400" : "text-slate-400"}`}>{pendingCount}</div>
-                            </div>
-                        </div>
-
-                        {/* Sub-tabs WMS */}
-                        <div className="flex border-t border-white/10">
-                            <button
-                                onClick={() => setOperarioSubTab("conteo")}
-                                className={`flex-1 py-3 text-sm font-semibold transition-colors ${operarioSubTab === "conteo" ? "bg-white text-slate-900" : "text-slate-400 hover:text-white"}`}
-                            >
-                                📦 CONTEO
-                            </button>
-                            <button
-                                onClick={() => setOperarioSubTab("historial")}
-                                className={`flex-1 py-3 text-sm font-semibold transition-colors ${operarioSubTab === "historial" ? "bg-white text-slate-900" : "text-slate-400 hover:text-white"}`}
-                            >
-                                📋 MIS REGISTROS
+                        <div className="flex items-center gap-2">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${isOnline ? "bg-green-500/20 text-green-300" : "bg-red-500/20 text-red-300"}`}>
+                                {isOnline ? "● En línea" : "● Sin conexión"}
+                            </span>
+                            <button onClick={logout} className="text-xs text-slate-400 hover:text-white font-medium px-2 py-1 rounded-lg hover:bg-white/10 transition">
+                                Salir
                             </button>
                         </div>
-                    </header>
-                )}
-
-                {/* Header validador / admin */}
-                {!isOnlyOperario && (canValidate(user) || hasRole(user, "Administrador")) && (
-                    <>
-                        {activeTab === "operario" && (
-                            <section className="md:hidden bg-white rounded-2xl p-3 shadow border border-slate-200">
-                                <div className="flex items-center justify-between gap-2">
-                                    <div className="min-w-0">
-                                        <div className="text-xs text-slate-500">Inventario</div>
-                                        <div className="text-sm font-bold text-slate-900 truncate">{currentInventory?.name || "-"}</div>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        {canAccessAnyInventory(user) && (
-                                            <select
-                                                className="rounded-xl border text-slate-900 px-2 py-1.5 text-xs max-w-[130px]"
-                                                value={selectedInventoryId}
-                                                onChange={(e) => handleInventoryChange(e.target.value)}
-                                            >
-                                                {inventories.map((inv) => (<option key={inv.id} value={inv.id}>{inv.name}</option>))}
-                                            </select>
-                                        )}
-                                        <button className="px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-semibold" onClick={logout}>Salir</button>
-                                    </div>
-                                </div>
-                            </section>
+                    </div>
+                    {/* Info del operario */}
+                    <div className="px-4 py-3 flex items-center justify-between">
+                        <div>
+                            <div className="font-bold text-base leading-tight">{user.full_name}</div>
+                            <div className="text-xs text-slate-400 mt-0.5">{currentInventory?.name || "Cargando..."}</div>
+                        </div>
+                        {pendingCount > 0 && (
+                            <button
+                                onClick={syncPendingRecords}
+                                disabled={syncing || isOnline === false}
+                                className="flex items-center gap-2 bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs font-semibold px-3 py-2 rounded-xl"
+                            >
+                                {syncing ? "⏫ Subiendo..." : `⚠ ${pendingCount} pendiente${pendingCount > 1 ? "s" : ""}`}
+                            </button>
                         )}
-                        <section className={`rounded-3xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-700 text-white shadow-xl p-6 md:p-8 ${activeTab === "operario" ? "hidden md:block" : ""}`}>
-                            <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-                                <div>
-                                    <div className="inline-flex rounded-full bg-white/10 px-4 py-1 text-sm mb-4">Sistema Web de Conteos</div>
-                                    <h1 className="text-3xl md:text-4xl font-bold leading-tight">Bienvenido, {user.full_name}</h1>
-                                </div>
-                                <div className="grid sm:grid-cols-2 gap-3 w-full xl:w-auto">
-                                    <div className="bg-white/10 rounded-2xl p-4 min-w-[280px]">
-                                        <div className="text-sm text-slate-200 mb-2">Inventario activo</div>
-                                        <select
-                                            className="w-full rounded-xl border border-white/20 bg-white text-slate-900 px-3 py-3 disabled:bg-slate-200 disabled:text-slate-500"
-                                            value={selectedInventoryId}
-                                            onChange={(e) => handleInventoryChange(e.target.value)}
-                                            disabled={!canAccessAnyInventory(user)}
-                                        >
-                                            {inventories.map((inv) => (<option key={inv.id} value={inv.id}>{inv.name}</option>))}
-                                        </select>
-                                    </div>
-                                    <div className="flex gap-3 items-end justify-end">
-                                        <button className="px-5 py-3 rounded-2xl bg-white text-slate-900 font-semibold shadow" onClick={logout}>Salir</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </section>
-                    </>
-                )}
+                    </div>
+
+                    {/* Mis registros de hoy */}
+                    <div className="px-4 pb-3 flex gap-3">
+                        <div className="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
+                            <div className="text-xs text-slate-400">Mis registros</div>
+                            <div className="text-xl font-bold">{operarioRecords.length}</div>
+                        </div>
+                        <div className="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
+                            <div className="text-xs text-slate-400">Validados</div>
+                            <div className="text-xl font-bold text-green-400">{_operarioValidatedCount}</div>
+                        </div>
+                        <div className="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
+                            <div className="text-xs text-slate-400">Offline</div>
+                            <div className={`text-xl font-bold ${pendingCount > 0 ? "text-amber-400" : "text-slate-400"}`}>{pendingCount}</div>
+                        </div>
+                    </div>
+
+                    {/* Sub-tabs WMS */}
+                    <div className="flex border-t border-white/10">
+                        <button
+                            onClick={() => setOperarioSubTab("conteo")}
+                            className={`flex-1 py-3 text-sm font-semibold transition-colors ${operarioSubTab === "conteo" ? "bg-white text-slate-900" : "text-slate-400 hover:text-white"}`}
+                        >
+                            📦 CONTEO
+                        </button>
+                        <button
+                            onClick={() => setOperarioSubTab("historial")}
+                            className={`flex-1 py-3 text-sm font-semibold transition-colors ${operarioSubTab === "historial" ? "bg-white text-slate-900" : "text-slate-400 hover:text-white"}`}
+                        >
+                            📋 MIS REGISTROS
+                        </button>
+                    </div>
+                </header>
 
                 {/* Mensaje global */}
                 {message && (
@@ -2181,63 +2140,10 @@ export default function DashboardPage() {
                     <div className="bg-white rounded-2xl p-4 shadow text-sm border border-slate-200">Cargando información del inventario...</div>
                 )}
 
-                {/* Stats validador/admin */}
-                {!isOnlyOperario && (canValidate(user) || hasRole(user, "Administrador")) && (
-                    <section className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 ${activeTab === "operario" ? "hidden md:grid" : ""}`}>
-                        <div className="bg-white rounded-2xl shadow p-5 border border-slate-200">
-                            <div className="text-sm text-slate-500">Inventario activo</div>
-                            <div className="text-xl font-bold text-slate-900 mt-2">{currentInventory?.name || "-"}</div>
-                            <div className="text-sm text-slate-500 mt-2">Código: {currentInventory?.code || "-"}</div>
-                        </div>
-                        <div className="bg-white rounded-2xl shadow p-5 border border-slate-200">
-                            <div className="text-sm text-slate-500">Productos del inventario</div>
-                            <div className="text-3xl font-bold text-slate-900 mt-2">{totalProductCount.toLocaleString()}</div>
-                            <div className="text-xs text-slate-400 mt-1">Con stock: {totalProductWithStockCount.toLocaleString()}</div>
-                        </div>
-                        <div className="bg-white rounded-2xl shadow p-5 border border-slate-200">
-                            <div className="text-sm text-slate-500">Registros del inventario</div>
-                            <div className="text-3xl font-bold text-slate-900 mt-2">{records.length}</div>
-                        </div>
-                        <div className="bg-white rounded-2xl shadow p-5 border border-slate-200">
-                            <div className="text-sm text-slate-500">Usuarios</div>
-                            <div className="text-3xl font-bold text-slate-900 mt-2">{users.length}</div>
-                        </div>
-                    </section>
-                )}
-
-                {/* Tabs para no-operarios */}
-                {!isOnlyOperario && (canCount(user) || canValidate(user)) && (
-                    <section className="bg-white rounded-2xl p-3 shadow">
-                        <div className="flex flex-wrap gap-2">
-                            {canCount(user) && (
-                                <button className={`px-4 py-2 rounded-xl border font-semibold transition ${activeTab === "operario" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-900 border-slate-300"}`} onClick={() => setActiveTab("operario")}>
-                                    Operario
-                                </button>
-                            )}
-                            {canValidate(user) && (
-                                <button className={`px-4 py-2 rounded-xl border font-semibold transition ${activeTab === "validador" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-900 border-slate-300"}`} onClick={() => setActiveTab("validador")}>
-                                    Validador
-                                </button>
-                            )}
-                            {canValidate(user) && (
-                                <button className={`px-4 py-2 rounded-xl border font-semibold transition ${activeTab === "maestro" ? "bg-indigo-700 text-white border-indigo-700" : "bg-white text-indigo-700 border-indigo-300"}`} onClick={() => setActiveTab("maestro")}>
-                                    📋 Maestro
-                                </button>
-                            )}
-                            {hasRole(user, "Administrador") && (
-                                <button className={`px-4 py-2 rounded-xl border font-semibold transition ${activeTab === "admin" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-900 border-slate-300"}`} onClick={() => setActiveTab("admin")}>
-                                    Administrador
-                                </button>
-                            )}
-                        </div>
-                    </section>
-                )}
-
                 {/* ══════════════════════════════════════════════════════════════
                     TAB OPERARIO — VISTA WMS MÓVIL (solo operarios puros)
                 ══════════════════════════════════════════════════════════════ */}
-                {isOnlyOperario && (
-                    <>
+                <>
                         {/* ── SUB-TAB: CONTEO ─────────────────────────────────── */}
                         {operarioSubTab === "conteo" && (
                             <div className="space-y-3">
@@ -2427,6 +2333,184 @@ export default function DashboardPage() {
                             </div>
                         )}
                     </>
+
+            </div>
+        </main>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════════
+            VISTA ADMIN / VALIDADOR — Layout WMS Desktop con Sidebar
+        ══════════════════════════════════════════════════════════════════════ */}
+        {!isOnlyOperario && (
+        <div className="min-h-screen bg-slate-100 flex">
+
+            {/* ── SIDEBAR FIJO ─────────────────────────────────────────────── */}
+            <aside className="hidden lg:flex flex-col w-56 bg-slate-950 text-white fixed top-0 left-0 h-screen z-30 shadow-2xl">
+                {/* Logo / Brand */}
+                <div className="px-5 py-5 border-b border-white/10">
+                    <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">WMS</span>
+                    </div>
+                    <div className="text-base font-bold text-white leading-tight">Sistema Conteo</div>
+                    <div className="text-xs text-slate-400 mt-0.5 truncate">{currentInventory?.name || "—"}</div>
+                </div>
+
+                {/* Inventario selector */}
+                {canAccessAnyInventory(user) && (
+                    <div className="px-4 py-3 border-b border-white/10">
+                        <div className="text-xs text-slate-500 mb-1.5 uppercase tracking-wider">Inventario</div>
+                        <select
+                            className="w-full rounded-lg border border-white/10 bg-white/10 text-white text-xs px-2 py-2 focus:outline-none focus:border-white/30"
+                            value={selectedInventoryId}
+                            onChange={(e) => handleInventoryChange(e.target.value)}
+                        >
+                            {inventories.map((inv) => (<option key={inv.id} value={inv.id} className="text-slate-900">{inv.name}</option>))}
+                        </select>
+                    </div>
+                )}
+
+                {/* Nav Items */}
+                <nav className="flex-1 py-4 space-y-1 px-3">
+                    {sidebarItems.map(item => (
+                        <button
+                            key={item.key}
+                            onClick={() => setActiveTab(item.key)}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                                activeTab === item.key
+                                    ? "bg-white text-slate-900 shadow"
+                                    : "text-slate-400 hover:text-white hover:bg-white/10"
+                            }`}
+                        >
+                            <span className="text-base w-5 text-center">{item.icon}</span>
+                            <span>{item.label}</span>
+                            {activeTab === item.key && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-slate-900" />}
+                        </button>
+                    ))}
+                </nav>
+
+                {/* Footer del sidebar */}
+                <div className="px-4 py-4 border-t border-white/10 space-y-3">
+                    {/* Stats rápidos */}
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-white/5 rounded-lg px-2 py-2 text-center">
+                            <div className="text-lg font-bold text-white">{records.length}</div>
+                            <div className="text-xs text-slate-500">Registros</div>
+                        </div>
+                        <div className="bg-white/5 rounded-lg px-2 py-2 text-center">
+                            <div className="text-lg font-bold text-white">{totalProductCount.toLocaleString()}</div>
+                            <div className="text-xs text-slate-500">Productos</div>
+                        </div>
+                    </div>
+                    {/* Usuario info */}
+                    <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold text-white shrink-0">
+                            {user.full_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                            <div className="text-xs font-semibold text-white truncate">{user.full_name}</div>
+                            <div className="text-xs text-slate-500">{user.roles?.join(", ") || user.role}</div>
+                        </div>
+                    </div>
+                    <button
+                        onClick={logout}
+                        className="w-full py-2 rounded-xl bg-white/10 text-white text-xs font-semibold hover:bg-red-600/30 hover:text-red-300 transition"
+                    >
+                        → Cerrar sesión
+                    </button>
+                </div>
+            </aside>
+
+            {/* ── MOBILE TOPBAR (visible solo en <lg) ─────────────────────── */}
+            <div className="lg:hidden fixed top-0 left-0 right-0 z-20 bg-slate-950 text-white px-4 py-3 flex items-center justify-between shadow-lg">
+                <div>
+                    <div className="text-xs text-slate-400 uppercase tracking-wider">WMS Conteo</div>
+                    <div className="text-sm font-bold">{currentInventory?.name || "—"}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                    {canAccessAnyInventory(user) && (
+                        <select
+                            className="rounded-lg border border-white/20 bg-white/10 text-white text-xs px-2 py-1.5 max-w-[120px]"
+                            value={selectedInventoryId}
+                            onChange={(e) => handleInventoryChange(e.target.value)}
+                        >
+                            {inventories.map((inv) => (<option key={inv.id} value={inv.id} className="text-slate-900">{inv.name}</option>))}
+                        </select>
+                    )}
+                    <button className="text-xs bg-white/10 px-3 py-1.5 rounded-lg font-semibold" onClick={logout}>Salir</button>
+                </div>
+            </div>
+
+            {/* ── MOBILE BOTTOM NAV (visible solo en <lg) ──────────────────── */}
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-20 bg-slate-950 border-t border-white/10 flex">
+                {sidebarItems.map(item => (
+                    <button
+                        key={item.key}
+                        onClick={() => setActiveTab(item.key)}
+                        className={`flex-1 flex flex-col items-center py-2.5 text-xs font-semibold transition-colors ${
+                            activeTab === item.key ? "text-white" : "text-slate-500"
+                        }`}
+                    >
+                        <span className="text-lg">{item.icon}</span>
+                        <span className="text-[10px] mt-0.5">{item.label}</span>
+                    </button>
+                ))}
+            </div>
+
+            {/* ── MAIN CONTENT AREA ─────────────────────────────────────────── */}
+            <div className="flex-1 lg:ml-56 min-h-screen flex flex-col">
+
+                {/* Top bar desktop */}
+                <header className="hidden lg:flex items-center justify-between px-8 py-4 bg-white border-b border-slate-200 shadow-sm">
+                    <div>
+                        <div className="text-xs text-slate-400 uppercase tracking-widest font-semibold">
+                            {sidebarItems.find(i => i.key === activeTab)?.icon} {sidebarItems.find(i => i.key === activeTab)?.label}
+                        </div>
+                        <h1 className="text-xl font-bold text-slate-900 leading-tight">
+                            {activeTab === "operario" && "Módulo Operario"}
+                            {activeTab === "validador" && "Módulo Validador"}
+                            {activeTab === "maestro" && "Maestro de Productos"}
+                            {activeTab === "admin" && "Administrador del Sistema"}
+                        </h1>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        {/* KPI rápidos en topbar */}
+                        <div className="flex items-center gap-3 text-sm">
+                            <div className="text-center">
+                                <div className="font-bold text-slate-900">{records.length}</div>
+                                <div className="text-xs text-slate-400">Registros</div>
+                            </div>
+                            <div className="w-px h-8 bg-slate-200" />
+                            <div className="text-center">
+                                <div className="font-bold text-slate-900">{totalProductCount.toLocaleString()}</div>
+                                <div className="text-xs text-slate-400">Productos</div>
+                            </div>
+                            <div className="w-px h-8 bg-slate-200" />
+                            <div className="text-center">
+                                <div className="font-bold text-slate-900">{users.length}</div>
+                                <div className="text-xs text-slate-400">Usuarios</div>
+                            </div>
+                        </div>
+                        {/* Online indicator */}
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${isOnline ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                            {isOnline ? "● En línea" : "● Sin conexión"}
+                        </span>
+                    </div>
+                </header>
+
+                {/* Content */}
+                <main className="flex-1 p-4 lg:p-7 space-y-6 mt-14 lg:mt-0 mb-16 lg:mb-0">
+
+                {/* Mensaje global */}
+                {message && (
+                    <div className={`rounded-2xl p-4 shadow text-sm border flex items-start justify-between gap-3 ${messageType === "success" ? "bg-green-50 border-green-200 text-green-800" : messageType === "error" ? "bg-red-50 border-red-200 text-red-800" : "bg-white border-slate-200 text-slate-800"}`}>
+                        <span>{message}</span>
+                        <button className="text-xs opacity-60 hover:opacity-100 shrink-0" onClick={clearMessage}>✕</button>
+                    </div>
+                )}
+
+                {loading && (
+                    <div className="bg-white rounded-2xl p-4 shadow text-sm border border-slate-200">Cargando información del inventario...</div>
                 )}
 
                 {/* ══════════════════════════════════════════════════════════════
@@ -3389,7 +3473,10 @@ export default function DashboardPage() {
                     </div>
                 )}
 
+                </main>
             </div>
-        </main>
+        </div>
+        )}
+        </>
     );
 }
