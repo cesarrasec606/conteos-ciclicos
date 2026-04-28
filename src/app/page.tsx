@@ -354,7 +354,7 @@ export default function LoginPage() {
               </p>
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-white">Conteos Cíclicos</h1>
+          <h1 className="text-2xl font-bold text-white">Auditorias e Inventarios Generales</h1>
           <p className="text-slate-400 text-sm">Ingresa con tus credenciales</p>
         </div>
 
