@@ -2629,164 +2629,236 @@ export default function DashboardPage() {
             VISTA ADMIN / VALIDADOR — Layout WMS Desktop con Sidebar
         ══════════════════════════════════════════════════════════════════════ */}
         {!isOnlyOperario && (
-        <div className="min-h-screen bg-slate-100 flex">
+        <div className="min-h-screen bg-[#f0f2f5] flex">
 
             {/* ── SIDEBAR FIJO ─────────────────────────────────────────────── */}
-            <aside className="hidden lg:flex flex-col w-56 bg-slate-950 text-white fixed top-0 left-0 h-screen z-30 shadow-2xl">
-                {/* Logo / Brand */}
-                <div className="px-5 py-5 border-b border-white/10">
-                    <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">WMS</span>
+            <aside className="hidden lg:flex flex-col w-64 bg-[#0f1923] text-white fixed top-0 left-0 h-screen z-30">
+
+                {/* Brand */}
+                <div className="px-6 pt-6 pb-5 border-b border-white/8">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-9 h-9 rounded-xl bg-blue-500 flex items-center justify-center text-white font-black text-sm shadow-lg shadow-blue-500/30">
+                            W
+                        </div>
+                        <div>
+                            <div className="text-sm font-bold text-white tracking-tight">WMS Conteo</div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-emerald-400" : "bg-red-400"}`} />
+                                <span className="text-[10px] text-slate-500 font-medium">{isOnline ? "EN LÍNEA" : "SIN CONEXIÓN"}</span>
+                            </div>
+                        </div>
                     </div>
-                    <div className="text-base font-bold text-white leading-tight">Sistema Conteo</div>
-                    <div className="text-xs text-slate-400 mt-0.5 truncate">{currentInventory?.name || "—"}</div>
+
+                    {/* Inventario selector */}
+                    {canAccessAnyInventory(user) ? (
+                        <div>
+                            <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest mb-1.5">Inventario activo</div>
+                            <select
+                                className="w-full rounded-lg bg-white/8 border border-white/10 text-white text-xs px-3 py-2.5 focus:outline-none focus:border-blue-500/50 focus:bg-white/12 transition"
+                                value={selectedInventoryId}
+                                onChange={(e) => handleInventoryChange(e.target.value)}
+                            >
+                                {inventories.map((inv) => (<option key={inv.id} value={inv.id} className="text-slate-900 bg-white">{inv.name}</option>))}
+                            </select>
+                        </div>
+                    ) : (
+                        <div className="rounded-lg bg-white/6 border border-white/8 px-3 py-2">
+                            <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest mb-0.5">Inventario</div>
+                            <div className="text-xs font-semibold text-white truncate">{currentInventory?.name || "—"}</div>
+                        </div>
+                    )}
                 </div>
 
-                {/* Inventario selector */}
-                {canAccessAnyInventory(user) && (
-                    <div className="px-4 py-3 border-b border-white/10">
-                        <div className="text-xs text-slate-500 mb-1.5 uppercase tracking-wider">Inventario</div>
-                        <select
-                            className="w-full rounded-lg border border-white/10 bg-white/10 text-white text-xs px-2 py-2 focus:outline-none focus:border-white/30"
-                            value={selectedInventoryId}
-                            onChange={(e) => handleInventoryChange(e.target.value)}
-                        >
-                            {inventories.map((inv) => (<option key={inv.id} value={inv.id} className="text-slate-900">{inv.name}</option>))}
-                        </select>
-                    </div>
-                )}
-
-                {/* Nav Items */}
-                <nav className="flex-1 py-4 space-y-1 px-3">
-                    {sidebarItems.map(item => (
-                        <button
-                            key={item.key}
-                            onClick={() => setActiveTab(item.key)}
-                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                                activeTab === item.key
-                                    ? "bg-white text-slate-900 shadow"
-                                    : "text-slate-400 hover:text-white hover:bg-white/10"
-                            }`}
-                        >
-                            <span className="text-base w-5 text-center">{item.icon}</span>
-                            <span>{item.label}</span>
-                            {activeTab === item.key && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-slate-900" />}
-                        </button>
-                    ))}
+                {/* Nav */}
+                <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+                    <div className="text-[10px] text-slate-600 font-semibold uppercase tracking-widest px-3 mb-2">Módulos</div>
+                    {sidebarItems.map(item => {
+                        const isActive = activeTab === item.key;
+                        const icons: Record<TabKey, string> = {
+                            operario: "📦",
+                            validador: "✅",
+                            maestro: "📋",
+                            admin: "⚙️",
+                        };
+                        const labels: Record<TabKey, { main: string; sub: string }> = {
+                            operario:  { main: "Operario",      sub: "Registro de conteo" },
+                            validador: { main: "Validador",     sub: "Revisión y avance" },
+                            maestro:   { main: "Maestro",       sub: "Catálogo de productos" },
+                            admin:     { main: "Administrador", sub: "Usuarios e inventarios" },
+                        };
+                        return (
+                            <button
+                                key={item.key}
+                                onClick={() => setActiveTab(item.key)}
+                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all group ${
+                                    isActive
+                                        ? "bg-blue-500 shadow-lg shadow-blue-500/20"
+                                        : "hover:bg-white/6"
+                                }`}
+                            >
+                                <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0 transition-all ${
+                                    isActive ? "bg-white/20" : "bg-white/6 group-hover:bg-white/10"
+                                }`}>{icons[item.key]}</span>
+                                <div className="min-w-0">
+                                    <div className={`text-xs font-bold leading-tight ${isActive ? "text-white" : "text-slate-300"}`}>{labels[item.key].main}</div>
+                                    <div className={`text-[10px] leading-tight mt-0.5 ${isActive ? "text-blue-100" : "text-slate-600"}`}>{labels[item.key].sub}</div>
+                                </div>
+                                {isActive && <div className="ml-auto w-1 h-6 rounded-full bg-white/60" />}
+                            </button>
+                        );
+                    })}
                 </nav>
 
-                {/* Footer del sidebar */}
-                <div className="px-4 py-4 border-t border-white/10 space-y-3">
-                    {/* Stats rápidos */}
-                    <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-white/5 rounded-lg px-2 py-2 text-center">
-                            <div className="text-lg font-bold text-white">{records.length}</div>
-                            <div className="text-xs text-slate-500">Registros</div>
+                {/* Stats rápidas */}
+                <div className="px-4 py-3 border-t border-white/8">
+                    <div className="text-[10px] text-slate-600 font-semibold uppercase tracking-widest mb-2">Estado del inventario</div>
+                    <div className="grid grid-cols-3 gap-1.5 mb-3">
+                        <div className="bg-white/6 rounded-lg p-2 text-center">
+                            <div className="text-sm font-bold text-white">{records.length}</div>
+                            <div className="text-[9px] text-slate-500 uppercase">Conteos</div>
                         </div>
-                        <div className="bg-white/5 rounded-lg px-2 py-2 text-center">
-                            <div className="text-lg font-bold text-white">{totalProductCount.toLocaleString()}</div>
-                            <div className="text-xs text-slate-500">Productos</div>
+                        <div className="bg-white/6 rounded-lg p-2 text-center">
+                            <div className="text-sm font-bold text-white">{totalProductCount > 999 ? (totalProductCount/1000).toFixed(1)+"k" : totalProductCount}</div>
+                            <div className="text-[9px] text-slate-500 uppercase">SKUs</div>
+                        </div>
+                        <div className="bg-white/6 rounded-lg p-2 text-center">
+                            <div className="text-sm font-bold text-white">{skuProgress.pct}%</div>
+                            <div className="text-[9px] text-slate-500 uppercase">Avance</div>
                         </div>
                     </div>
-                    {/* Usuario info */}
-                    <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold text-white shrink-0">
+                    {/* Barra de avance */}
+                    <div className="w-full bg-white/8 rounded-full h-1 mb-3">
+                        <div className="bg-blue-400 h-1 rounded-full transition-all" style={{ width: `${skuProgress.pct}%` }} />
+                    </div>
+                </div>
+
+                {/* Usuario footer */}
+                <div className="px-4 pb-5 border-t border-white/8 pt-3">
+                    <div className="flex items-center gap-2.5 mb-3">
+                        <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-xs font-black text-blue-300 flex-shrink-0">
                             {user.full_name.charAt(0).toUpperCase()}
                         </div>
-                        <div className="min-w-0">
-                            <div className="text-xs font-semibold text-white truncate">{user.full_name}</div>
-                            <div className="text-xs text-slate-500">{user.roles?.join(", ") || user.role}</div>
+                        <div className="min-w-0 flex-1">
+                            <div className="text-xs font-bold text-white truncate leading-tight">{user.full_name}</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">{user.roles?.join(" · ") || user.role}</div>
                         </div>
                     </div>
                     <button
                         onClick={logout}
-                        className="w-full py-2 rounded-xl bg-white/10 text-white text-xs font-semibold hover:bg-red-600/30 hover:text-red-300 transition"
+                        className="w-full py-2 rounded-lg border border-white/10 text-slate-400 text-xs font-semibold hover:border-red-500/40 hover:text-red-400 hover:bg-red-500/8 transition"
                     >
-                        → Cerrar sesión
+                        Cerrar sesión
                     </button>
                 </div>
             </aside>
 
             {/* ── MOBILE TOPBAR (visible solo en <lg) ─────────────────────── */}
-            <div className="lg:hidden fixed top-0 left-0 right-0 z-20 bg-slate-950 text-white px-4 py-3 flex items-center justify-between shadow-lg">
-                <div>
-                    <div className="text-xs text-slate-400 uppercase tracking-wider">WMS Conteo</div>
-                    <div className="text-sm font-bold">{currentInventory?.name || "—"}</div>
+            <div className="lg:hidden fixed top-0 left-0 right-0 z-20 bg-[#0f1923] text-white px-4 py-3 flex items-center justify-between shadow-xl border-b border-white/8">
+                <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-blue-500 flex items-center justify-center text-white font-black text-xs">W</div>
+                    <div>
+                        <div className="text-xs font-bold text-white">WMS Conteo</div>
+                        <div className="text-[10px] text-slate-500 truncate max-w-[120px]">{currentInventory?.name || "—"}</div>
+                    </div>
                 </div>
                 <div className="flex items-center gap-2">
                     {canAccessAnyInventory(user) && (
                         <select
-                            className="rounded-lg border border-white/20 bg-white/10 text-white text-xs px-2 py-1.5 max-w-[120px]"
+                            className="rounded-lg border border-white/15 bg-white/10 text-white text-xs px-2 py-1.5 max-w-[110px]"
                             value={selectedInventoryId}
                             onChange={(e) => handleInventoryChange(e.target.value)}
                         >
                             {inventories.map((inv) => (<option key={inv.id} value={inv.id} className="text-slate-900">{inv.name}</option>))}
                         </select>
                     )}
-                    <button className="text-xs bg-white/10 px-3 py-1.5 rounded-lg font-semibold" onClick={logout}>Salir</button>
+                    <button className="text-xs bg-white/10 border border-white/15 px-3 py-1.5 rounded-lg font-semibold text-slate-300" onClick={logout}>Salir</button>
                 </div>
             </div>
 
             {/* ── MOBILE BOTTOM NAV (visible solo en <lg) ──────────────────── */}
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-20 bg-slate-950 border-t border-white/10 flex">
-                {sidebarItems.map(item => (
-                    <button
-                        key={item.key}
-                        onClick={() => setActiveTab(item.key)}
-                        className={`flex-1 flex flex-col items-center py-2.5 text-xs font-semibold transition-colors ${
-                            activeTab === item.key ? "text-white" : "text-slate-500"
-                        }`}
-                    >
-                        <span className="text-lg">{item.icon}</span>
-                        <span className="text-[10px] mt-0.5">{item.label}</span>
-                    </button>
-                ))}
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-20 bg-[#0f1923] border-t border-white/8 flex">
+                {sidebarItems.map(item => {
+                    const isActive = activeTab === item.key;
+                    return (
+                        <button
+                            key={item.key}
+                            onClick={() => setActiveTab(item.key)}
+                            className={`flex-1 flex flex-col items-center py-2.5 gap-0.5 transition-colors ${isActive ? "text-blue-400" : "text-slate-600"}`}
+                        >
+                            <span className="text-base">{item.icon}</span>
+                            <span className="text-[9px] font-bold uppercase tracking-wide">{item.label}</span>
+                            {isActive && <span className="w-4 h-0.5 rounded-full bg-blue-400 mt-0.5" />}
+                        </button>
+                    );
+                })}
             </div>
 
             {/* ── MAIN CONTENT AREA ─────────────────────────────────────────── */}
-            <div className="flex-1 lg:ml-56 min-h-screen flex flex-col">
+            <div className="flex-1 lg:ml-64 min-h-screen flex flex-col">
 
-                {/* Top bar desktop */}
-                <header className="hidden lg:flex items-center justify-between px-8 py-4 bg-white border-b border-slate-200 shadow-sm">
-                    <div>
-                        <div className="text-xs text-slate-400 uppercase tracking-widest font-semibold">
-                            {sidebarItems.find(i => i.key === activeTab)?.icon} {sidebarItems.find(i => i.key === activeTab)?.label}
+                {/* ── TOPBAR DESKTOP ──────────────────────────────────────────── */}
+                <header className="hidden lg:flex items-center justify-between px-8 py-0 bg-white border-b border-slate-200/80 shadow-sm sticky top-0 z-10 h-14">
+                    {/* Breadcrumb / página actual */}
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 text-slate-400 text-sm">
+                            <span className="font-medium text-slate-500">WMS</span>
+                            <span>/</span>
+                            <span className="font-semibold text-slate-800">
+                                {activeTab === "operario" && "Operario"}
+                                {activeTab === "validador" && "Validador"}
+                                {activeTab === "maestro" && "Maestro"}
+                                {activeTab === "admin" && "Administrador"}
+                            </span>
                         </div>
-                        <h1 className="text-xl font-bold text-slate-900 leading-tight">
-                            {activeTab === "operario" && "Módulo Operario"}
-                            {activeTab === "validador" && "Módulo Validador"}
-                            {activeTab === "maestro" && "Maestro de Productos"}
-                            {activeTab === "admin" && "Administrador del Sistema"}
-                        </h1>
+                        {currentInventory && (
+                            <>
+                                <span className="text-slate-300">/</span>
+                                <span className="text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full">
+                                    {currentInventory.name}
+                                </span>
+                            </>
+                        )}
                     </div>
-                    <div className="flex items-center gap-4">
-                        {/* KPI rápidos en topbar */}
-                        <div className="flex items-center gap-3 text-sm">
-                            <div className="text-center">
-                                <div className="font-bold text-slate-900">{records.length}</div>
-                                <div className="text-xs text-slate-400">Registros</div>
+
+                    {/* Acciones del topbar */}
+                    <div className="flex items-center gap-2">
+                        {/* KPIs compactos */}
+                        <div className="flex items-center gap-0 border border-slate-200 rounded-xl overflow-hidden">
+                            <div className="px-4 py-2 text-center border-r border-slate-200">
+                                <div className="text-sm font-bold text-slate-900 leading-none">{records.length.toLocaleString()}</div>
+                                <div className="text-[9px] text-slate-400 uppercase tracking-wide mt-0.5">Conteos</div>
                             </div>
-                            <div className="w-px h-8 bg-slate-200" />
-                            <div className="text-center">
-                                <div className="font-bold text-slate-900">{totalProductCount.toLocaleString()}</div>
-                                <div className="text-xs text-slate-400">Productos</div>
+                            <div className="px-4 py-2 text-center border-r border-slate-200">
+                                <div className="text-sm font-bold text-slate-900 leading-none">{totalProductCount.toLocaleString()}</div>
+                                <div className="text-[9px] text-slate-400 uppercase tracking-wide mt-0.5">SKUs</div>
                             </div>
-                            <div className="w-px h-8 bg-slate-200" />
-                            <div className="text-center">
-                                <div className="font-bold text-slate-900">{users.length}</div>
-                                <div className="text-xs text-slate-400">Usuarios</div>
+                            <div className="px-4 py-2 text-center">
+                                <div className="text-sm font-bold text-slate-900 leading-none">{skuProgress.pct}%</div>
+                                <div className="text-[9px] text-slate-400 uppercase tracking-wide mt-0.5">Avance</div>
                             </div>
                         </div>
-                        {/* Online indicator */}
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${isOnline ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                            {isOnline ? "● En línea" : "● Sin conexión"}
-                        </span>
+
+                        {/* Indicador online */}
+                        <div className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border ${isOnline ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-red-500"}`} />
+                            {isOnline ? "En línea" : "Sin conexión"}
+                        </div>
+
+                        {/* Avatar usuario */}
+                        <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+                            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-xs font-black text-white">
+                                {user.full_name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="text-xs">
+                                <div className="font-semibold text-slate-800 leading-tight">{user.full_name.split(" ")[0]}</div>
+                                <div className="text-slate-400 leading-tight">{user.roles?.[0] || user.role}</div>
+                            </div>
+                        </div>
                     </div>
                 </header>
 
                 {/* Content */}
-                <main className="flex-1 p-4 lg:p-7 space-y-6 mt-14 lg:mt-0 mb-16 lg:mb-0">
+                <main className="flex-1 p-4 lg:p-6 space-y-5 mt-14 lg:mt-0 mb-16 lg:mb-0 bg-[#f0f2f5]">
 
                 {/* Mensaje global */}
                 {message && (
@@ -2805,11 +2877,11 @@ export default function DashboardPage() {
                 ══════════════════════════════════════════════════════════════ */}
                 {!isOnlyOperario && activeTab === "operario" && canCount(user) && (
                     <>
-                        <section className="bg-white rounded-3xl p-4 md:p-6 shadow space-y-4 md:space-y-6">
-                            <div className="hidden md:block">
-                                <h2 className="text-2xl font-bold text-slate-900">Módulo Operario</h2>
-                                <p className="text-slate-600 mt-1">Inventario: <b>{currentInventory?.name || "-"}</b></p>
-                            </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-900">Módulo Operario</h2>
+                            <p className="text-sm text-slate-500 mt-0.5">Registro de conteo · <span className="font-semibold text-slate-700">{currentInventory?.name || "—"}</span></p>
+                        </div>
+                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 space-y-4 md:space-y-6">
                             <div className="grid lg:grid-cols-3 gap-4">
                                 <div className="lg:col-span-1">
                                     <label className="block font-semibold mb-2 text-slate-800">Código de barras / SKU</label>
@@ -2877,105 +2949,106 @@ export default function DashboardPage() {
                                 </div>
                             )}
 
-                            <div className="flex flex-wrap gap-3">
-                                <button className="px-5 py-3 rounded-2xl bg-slate-900 text-white font-semibold" onClick={saveCount}>Guardar conteo</button>
-                                <button className="px-5 py-3 rounded-2xl border font-semibold" onClick={() => { setSearchValue(""); setSelectedProduct(null); setSearchResults([]); setLocation(""); setQuantity(""); setMessage(""); }}>Limpiar</button>
+                            <div className="flex flex-wrap gap-2">
+                                <button className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition" onClick={saveCount}>Guardar conteo</button>
+                                <button className="px-5 py-2.5 rounded-xl border border-slate-200 font-semibold text-sm text-slate-600 hover:bg-slate-50 transition" onClick={() => { setSearchValue(""); setSelectedProduct(null); setSearchResults([]); setLocation(""); setQuantity(""); setMessage(""); }}>Limpiar</button>
                             </div>
-                        </section>
+                        </div>{/* end operario form card */}
 
                         {/* Mis registros (vista no-operario) */}
-                        <section className="bg-white rounded-3xl p-4 md:p-6 shadow space-y-4">
-                            <div className="space-y-3">
+                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-4">
                                 <div>
-                                    <h3 className="text-lg md:text-xl font-bold text-slate-900">Mis registros</h3>
-                                    <p className="text-slate-600 text-sm mt-1">Aquí puedes revisar todos tus registros y buscar rápido por SKU, descripción o ubicación.</p>
+                                    <h3 className="text-sm font-bold text-slate-900">Mis registros</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Busca por SKU, descripción o ubicación</p>
                                 </div>
-                                <input className="w-full border rounded-2xl p-3 text-sm" value={operarioHistorySearch} onChange={(e) => setOperarioHistorySearch(e.target.value)} placeholder="Buscar en mis registros..." />
+                                <input className="border border-slate-200 rounded-xl px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-300" value={operarioHistorySearch} onChange={(e) => setOperarioHistorySearch(e.target.value)} placeholder="Buscar..." />
                             </div>
-                            <div className="rounded-2xl border overflow-hidden">
-                                <div className="max-h-[320px] overflow-auto">
-                                    <table className="w-full text-sm">
-                                        <thead className="bg-slate-100 sticky top-0">
-                                            <tr>
-                                                <th className="p-2 border">SKU</th>
-                                                <th className="p-2 border">Desc.</th>
-                                                <th className="p-2 border">Cant.</th>
-                                                {showSystemStock && <th className="p-2 border">Stock Sis.</th>}
-                                                {showSystemStock && <th className="p-2 border">DIF</th>}
-                                                {showCost && <th className="p-2 border">Costo</th>}
-                                                {showValuedDiff && <th className="p-2 border">Dif. Valoriz.</th>}
-                                                <th className="p-2 border">Ubic.</th>
-                                                <th className="p-2 border">Fecha</th>
-                                                <th className="p-2 border">Estado</th>
-                                                <th className="p-2 border">Acción</th>
+                            <div className="overflow-auto max-h-96">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 border-b border-slate-100 sticky top-0">
+                                        <tr>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">SKU</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Descripción</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Cant.</th>
+                                            {showSystemStock && <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Stock Sis.</th>}
+                                            {showSystemStock && <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Dif.</th>}
+                                            {showCost && <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Costo</th>}
+                                            {showValuedDiff && <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Dif. Val.</th>}
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Ubic.</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Acción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {filteredOperarioRecords.map((r) => (
+                                            <tr key={r.id} className="hover:bg-slate-50/50">
+                                                <td className="p-3 font-semibold text-slate-800">{r.sku}</td>
+                                                <td className="p-3 text-slate-600 text-xs">{r.description}</td>
+                                                <td className="p-3 font-semibold">{r.counted_quantity}</td>
+                                                {showSystemStock && <td className="p-3">{r.system_stock}</td>}
+                                                {showSystemStock && <td className="p-3">{diffBadge(r.difference)}</td>}
+                                                {showCost && <td className="p-3">{formatMoney(r.cost)}</td>}
+                                                {showValuedDiff && <td className="p-3">{formatMoney(r.difference * r.cost)}</td>}
+                                                <td className="p-3 text-xs text-slate-500">{r.location}</td>
+                                                <td className="p-3 text-xs text-slate-500">{formatDateTime(r.counted_at)}</td>
+                                                <td className="p-3"><span className={statusBadge(r.status)}>{r.status}</span></td>
+                                                <td className="p-3">
+                                                    <button className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold hover:bg-slate-50 transition" onClick={() => openEdit(r)}>Editar</button>
+                                                </td>
                                             </tr>
-                                        </thead>
-                                        <tbody>
-                                            {filteredOperarioRecords.map((r) => (
-                                                <tr key={r.id}>
-                                                    <td className="p-2 border font-medium">{r.sku}</td>
-                                                    <td className="p-2 border">{r.description}</td>
-                                                    <td className="p-2 border">{r.counted_quantity}</td>
-                                                    {showSystemStock && <td className="p-2 border">{r.system_stock}</td>}
-                                                    {showSystemStock && <td className="p-2 border">{diffBadge(r.difference)}</td>}
-                                                    {showCost && <td className="p-2 border">{formatMoney(r.cost)}</td>}
-                                                    {showValuedDiff && <td className="p-2 border">{formatMoney(r.difference * r.cost)}</td>}
-                                                    <td className="p-2 border">{r.location}</td>
-                                                    <td className="p-2 border">{formatDateTime(r.counted_at)}</td>
-                                                    <td className="p-2 border"><span className={statusBadge(r.status)}>{r.status}</span></td>
-                                                    <td className="p-2 border">
-                                                        <button className="px-3 py-2 rounded-lg border text-xs font-semibold" onClick={() => openEdit(r)}>Editar</button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                            {filteredOperarioRecords.length === 0 && (
-                                                <tr><td className="p-4 border text-center text-slate-500" colSpan={showSystemStock ? (showCost ? (showValuedDiff ? 11 : 10) : 9) : 7}>No hay registros todavía.</td></tr>
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                        ))}
+                                        {filteredOperarioRecords.length === 0 && (
+                                            <tr><td className="p-6 text-center text-slate-400 text-sm" colSpan={showSystemStock ? (showCost ? (showValuedDiff ? 11 : 10) : 9) : 7}>No hay registros todavía.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
-                        </section>
+                        </div>
                     </>
                 )}
 
                 {/* ── TAB MAESTRO ────────────────────────────────────────────── */}
                 {activeTab === "maestro" && canValidate(user) && (
                     <>
-                        <section className="bg-white rounded-3xl p-6 shadow space-y-4">
-                            <div>
-                                <h2 className="text-2xl font-bold text-slate-900">Maestro de productos</h2>
-                                <p className="text-slate-600 mt-1">Inventario: <b>{currentInventory?.name || "-"}</b></p>
-                                <p className="text-xs text-slate-500 mt-1">Columnas requeridas: <b>SKU</b>, <b>DESCRIPCION</b>. Opcionales: UNIDAD DE MEDIDA, COSTO, STOCK.</p>
-                                <p className="text-xs text-indigo-600 mt-0.5">Los códigos de barra vienen del catálogo global — no necesitas incluirlos aquí.</p>
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-900">Maestro de Productos</h2>
+                            <p className="text-sm text-slate-500 mt-0.5">Carga del catálogo para el inventario activo · <span className="font-semibold text-slate-700">{currentInventory?.name || "—"}</span></p>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-4">
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+                                <div className="border-b border-slate-100 pb-3">
+                                    <h3 className="text-sm font-bold text-slate-900">Cargar archivo maestro</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Columnas requeridas: <b>SKU</b>, <b>DESCRIPCION</b>. Opcionales: UNIDAD DE MEDIDA, COSTO, STOCK.</p>
+                                    <p className="text-xs text-blue-500 mt-0.5">Los códigos de barra vienen del catálogo global — no se incluyen aquí.</p>
+                                </div>
+                                <input ref={masterInputRef} type="file" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0] || null; setMasterFile(f); setMasterFileName(f ? f.name : ""); }} />
+                                <div className="text-xs text-slate-500">{masterFileName ? `📄 ${masterFileName}` : "Ningún archivo seleccionado"}</div>
+                                {uploadProgress && (
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between text-xs font-semibold text-slate-700"><span>{uploadProgress?.step}</span><span>{uploadProgress?.pct ?? 0}%</span></div>
+                                        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden"><div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress?.pct ?? 0}%` }} /></div>
+                                        <p className="text-xs text-slate-400">No cierres ni recargues la página. Con 32k productos tarda aprox. 5-8 min.</p>
+                                    </div>
+                                )}
+                                <button className={`px-4 py-2.5 rounded-xl font-semibold text-sm text-white w-full transition ${uploadProgress ? "bg-slate-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"}`} type="button" onClick={uploadMaster} disabled={!!uploadProgress}>
+                                    {uploadProgress ? "Cargando..." : "Insertar maestro"}
+                                </button>
                             </div>
-                            <div className="grid md:grid-cols-2 gap-6">
-                                <div className="space-y-3">
-                                    <input ref={masterInputRef} type="file" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0] || null; setMasterFile(f); setMasterFileName(f ? f.name : ""); }} />
-                                    <div className="text-sm text-slate-500">{masterFileName ? `📄 ${masterFileName}` : "Ningún archivo seleccionado"}</div>
-                                    {uploadProgress && (
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between text-sm font-semibold text-slate-700"><span>{uploadProgress?.step}</span><span>{uploadProgress?.pct ?? 0}%</span></div>
-                                            <div className="w-full bg-slate-200 rounded-full h-4 overflow-hidden"><div className="bg-slate-900 h-4 rounded-full transition-all duration-300" style={{ width: `${uploadProgress?.pct ?? 0}%` }} /></div>
-                                            <p className="text-xs text-slate-500">No cierres ni recargues la página... Con 32k productos tarda aprox. 5-8 minutos.</p>
-                                        </div>
-                                    )}
-                                    <button className={`px-4 py-3 rounded-2xl font-semibold text-white w-full ${uploadProgress ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900"}`} type="button" onClick={uploadMaster} disabled={!!uploadProgress}>
-                                        {uploadProgress ? "Cargando..." : "Insertar maestro"}
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-3">
+                                <div className="border-b border-slate-100 pb-3">
+                                    <h3 className="text-sm font-bold text-slate-900">Estado actual</h3>
+                                </div>
+                                <div className="text-4xl font-black text-slate-900">{totalProductCount.toLocaleString()}</div>
+                                <div className="text-xs text-slate-400 uppercase tracking-wide">productos cargados en este inventario</div>
+                                {totalProductCount > 0 && user?.role === "Administrador" && (
+                                    <button className={`mt-3 px-4 py-2.5 rounded-xl text-white text-sm font-semibold w-full transition ${uploadProgress ? "bg-slate-300 cursor-not-allowed" : "bg-red-500 hover:bg-red-600"}`} onClick={deleteMaster} disabled={!!uploadProgress}>
+                                        {uploadProgress ? "Procesando..." : "⚡ Eliminar todo el maestro"}
                                     </button>
-                                </div>
-                                <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
-                                    <div className="font-semibold text-slate-700 text-sm">Estado actual</div>
-                                    <div className="text-3xl font-bold text-slate-900">{totalProductCount.toLocaleString()}</div>
-                                    <div className="text-xs text-slate-500">productos cargados en este inventario</div>
-                                    {totalProductCount > 0 && user?.role === "Administrador" && (
-                                        <button className={`mt-3 px-4 py-2 rounded-xl text-white text-sm font-semibold w-full ${uploadProgress ? "bg-slate-400 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"}`} onClick={deleteMaster} disabled={!!uploadProgress}>
-                                            {uploadProgress ? "Procesando..." : "⚡ Eliminar todo el maestro"}
-                                        </button>
-                                    )}
-                                </div>
+                                )}
                             </div>
-                        </section>
+                        </div>
                     </>
                 )}
 
@@ -2985,85 +3058,103 @@ export default function DashboardPage() {
                         {/* ── REGISTROS Y RESUMEN ─────────────────────────── */}
                         {true && (
                             <>
-                        <section className="bg-white rounded-3xl p-6 shadow space-y-6">
-                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                                <div>
-                                    <h2 className="text-2xl font-bold text-slate-900">Módulo Validador</h2>
-                                    <p className="text-slate-600 mt-1">Revisión, validación, avance y productividad por inventario.</p>
-                                </div>
-                            </div>
-                            <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
-                                <div className="rounded-2xl border p-5 bg-slate-50">
-                                    <div className="text-sm text-slate-500">Valorizado inventario</div>
-                                    <div className="text-2xl font-bold mt-1">{formatMoney(inventoryValue)}</div>
-                                </div>
-                                <div className="rounded-2xl border p-5 bg-slate-50">
-                                    <div className="text-sm text-slate-500">Valorizado contado</div>
-                                    <div className="text-2xl font-bold mt-1">{formatMoney(countedValue)}</div>
-                                </div>
-                                <div className="rounded-2xl border p-5 bg-slate-50">
-                                    <div className="text-sm text-slate-500">Avance por SKU</div>
-                                    <div className="text-2xl font-bold mt-1">{skuProgress.pct}%</div>
-                                    <div className="text-sm text-slate-500 mt-1">{skuProgress.counted} de {skuProgress.total}</div>
-                                    <div className="text-xs text-slate-500 mt-2">No considera productos con stock 0.</div>
-                                </div>
-                                <div className="rounded-2xl border p-5 bg-slate-50">
-                                    <div className="text-sm text-slate-500">Avance por valorizado</div>
-                                    <div className="text-2xl font-bold mt-1">{valorizadoPct}%</div>
-                                    <div className="text-sm text-slate-500 mt-1">{formatMoney(countedValue)} de {formatMoney(inventoryValue)}</div>
-                                </div>
-                            </div>
-                        </section>
-
-                        <section className="bg-white rounded-3xl p-6 shadow space-y-4">
+                        {/* Header de sección */}
+                        <div className="flex items-center justify-between">
                             <div>
-                                <h3 className="text-xl font-bold text-slate-900">Indicadores por usuario</h3>
-                                <p className="text-slate-600 text-sm mt-1">El cálculo usa el tiempo real entre el primer y el último registro por usuario.</p>
+                                <h2 className="text-xl font-bold text-slate-900">Módulo Validador</h2>
+                                <p className="text-sm text-slate-500 mt-0.5">Revisión, validación, avance y productividad · <span className="font-semibold text-slate-700">{currentInventory?.name || "—"}</span></p>
                             </div>
-                            <div className="grid lg:grid-cols-2 gap-6">
-                                <div className="border rounded-2xl p-5">
-                                    <h4 className="font-semibold mb-4">SKU contados por min</h4>
-                                    <div className="space-y-4">
+                        </div>
+
+                        {/* KPI Banner */}
+                        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+                                <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Valorizado inventario</div>
+                                <div className="text-2xl font-black text-slate-900">{formatMoney(inventoryValue)}</div>
+                                <div className="text-xs text-slate-400 mt-1">Stock sistema × costo</div>
+                            </div>
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+                                <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Valorizado contado</div>
+                                <div className="text-2xl font-black text-slate-900">{formatMoney(countedValue)}</div>
+                                <div className="text-xs text-slate-400 mt-1">Conteo real × costo</div>
+                            </div>
+                            <div className="bg-white rounded-2xl border border-blue-100 p-5 shadow-sm">
+                                <div className="text-xs text-blue-500 font-semibold uppercase tracking-wide mb-2">Avance por SKU</div>
+                                <div className="text-2xl font-black text-slate-900">{skuProgress.pct}<span className="text-lg text-slate-400">%</span></div>
+                                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2">
+                                    <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${skuProgress.pct}%` }} />
+                                </div>
+                                <div className="text-xs text-slate-400 mt-1">{skuProgress.counted} de {skuProgress.total} SKUs</div>
+                            </div>
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+                                <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Avance valorizado</div>
+                                <div className="text-2xl font-black text-slate-900">{valorizadoPct}<span className="text-lg text-slate-400">%</span></div>
+                                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2">
+                                    <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: `${valorizadoPct}%` }} />
+                                </div>
+                                <div className="text-xs text-slate-400 mt-1">{formatMoney(countedValue)} / {formatMoney(inventoryValue)}</div>
+                            </div>
+                        </div>
+
+                        {/* Indicadores por usuario */}
+                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-900">Productividad por usuario</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Basado en tiempo entre primer y último registro por usuario</p>
+                                </div>
+                            </div>
+                            <div className="p-6 grid lg:grid-cols-2 gap-6">
+                                <div>
+                                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-4">SKUs / minuto</div>
+                                    <div className="space-y-3">
                                         {speedByUser.map((item) => (
-                                            <div key={item.user}>
-                                                <div className="flex justify-between text-sm mb-1 gap-3"><span className="font-medium">{item.user}</span><span>{item.skuPerMin}</span></div>
-                                                <div className="w-full bg-slate-200 rounded-full h-4 overflow-hidden"><div className="bg-slate-900 h-4" style={{ width: `${(item.skuPerMin / maxBarValue) * 100}%` }} /></div>
+                                            <div key={item.user} className="flex items-center gap-3">
+                                                <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-black text-slate-600 flex-shrink-0">{item.user.charAt(0).toUpperCase()}</div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex justify-between text-xs mb-1"><span className="font-semibold text-slate-700 truncate">{item.user}</span><span className="font-bold text-slate-900 ml-2">{item.skuPerMin}</span></div>
+                                                    <div className="w-full bg-slate-100 rounded-full h-2"><div className="bg-slate-800 h-2 rounded-full" style={{ width: `${(item.skuPerMin / maxBarValue) * 100}%` }} /></div>
+                                                </div>
                                             </div>
                                         ))}
-                                        {speedByUser.length === 0 && <div className="text-sm text-slate-500">Sin datos.</div>}
+                                        {speedByUser.length === 0 && <div className="text-sm text-slate-400">Sin datos.</div>}
                                     </div>
                                 </div>
-                                <div className="border rounded-2xl p-5">
-                                    <h4 className="font-semibold mb-4">Unidades contadas por min</h4>
-                                    <div className="space-y-4">
+                                <div>
+                                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-4">Unidades / minuto</div>
+                                    <div className="space-y-3">
                                         {speedByUser.map((item) => (
-                                            <div key={item.user + "-u"}>
-                                                <div className="flex justify-between text-sm mb-1 gap-3"><span className="font-medium">{item.user}</span><span>{item.unitsPerMin}</span></div>
-                                                <div className="w-full bg-slate-200 rounded-full h-4 overflow-hidden"><div className="bg-blue-700 h-4" style={{ width: `${(item.unitsPerMin / maxBarValue) * 100}%` }} /></div>
+                                            <div key={item.user + "-u"} className="flex items-center gap-3">
+                                                <div className="w-6 h-6 rounded-lg bg-blue-50 flex items-center justify-center text-xs font-black text-blue-600 flex-shrink-0">{item.user.charAt(0).toUpperCase()}</div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex justify-between text-xs mb-1"><span className="font-semibold text-slate-700 truncate">{item.user}</span><span className="font-bold text-slate-900 ml-2">{item.unitsPerMin}</span></div>
+                                                    <div className="w-full bg-slate-100 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full" style={{ width: `${(item.unitsPerMin / maxBarValue) * 100}%` }} /></div>
+                                                </div>
                                             </div>
                                         ))}
-                                        {speedByUser.length === 0 && <div className="text-sm text-slate-500">Sin datos.</div>}
+                                        {speedByUser.length === 0 && <div className="text-sm text-slate-400">Sin datos.</div>}
                                     </div>
                                 </div>
                             </div>
-                        </section>
+                        </div>
 
                         {/* Tabla con pestañas */}
-                        <section className="bg-white rounded-3xl p-6 shadow space-y-4">
-                            <div className="flex gap-2 border-b border-slate-200 pb-0">
+                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                            <div className="flex gap-0 border-b border-slate-100 px-6">
                                 <button
-                                    className={`px-5 py-2.5 rounded-t-xl font-semibold text-sm border-b-2 transition-colors ${validadorSubTab === "registros" ? "border-slate-900 text-slate-900 bg-slate-50" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+                                    className={`px-5 py-3.5 font-semibold text-sm border-b-2 transition-colors -mb-px ${validadorSubTab === "registros" ? "border-blue-500 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}
                                     onClick={() => setValidadorSubTab("registros")}
                                 >
                                     Registros totales
                                 </button>
                                 <button
-                                    className={`px-5 py-2.5 rounded-t-xl font-semibold text-sm border-b-2 transition-colors ${validadorSubTab === "resumen" ? "border-slate-900 text-slate-900 bg-slate-50" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+                                    className={`px-5 py-3.5 font-semibold text-sm border-b-2 transition-colors -mb-px ${validadorSubTab === "resumen" ? "border-blue-500 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}
                                     onClick={() => setValidadorSubTab("resumen")}
                                 >
                                     Resumen por código
                                 </button>
                             </div>
+                            <div className="p-6 space-y-4">
 
                             {/* Registros totales */}
                             {validadorSubTab === "registros" && (
@@ -3146,25 +3237,25 @@ export default function DashboardPage() {
                             {validadorSubTab === "resumen" && (
                                 <div className="space-y-4">
                                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                                        <p className="text-slate-600 text-sm">
-                                            Agrupa por SKU sumando todos los conteos. Incluye todos los productos del maestro con stock &gt; 0. Consulta directa a base de datos.
+                                        <p className="text-xs text-slate-400">
+                                            Agrupa por SKU sumando todos los conteos. Incluye todos los productos del maestro con stock &gt; 0.
                                         </p>
                                         <div className="flex gap-2 shrink-0">
                                             <button
-                                                className="px-4 py-3 rounded-2xl bg-slate-600 hover:bg-slate-700 text-white font-semibold text-sm"
+                                                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm border border-slate-200 transition"
                                                 onClick={buildAuditFromDB}
                                                 disabled={auditLoading}
                                             >
                                                 {auditLoading ? "Cargando..." : "🔄 Actualizar"}
                                             </button>
                                             <button
-                                                className="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-sm"
+                                                className="px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-800 text-white font-semibold text-sm transition"
                                                 onClick={exportAudit}
                                             >
-                                                ⬇ Descargar resumen
+                                                ⬇ Descargar Excel
                                             </button>
                                             <button
-                                                className="px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm"
+                                                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition"
                                                 onClick={() => { setReportAuditorName(user?.full_name || ""); setShowReportModal(true); }}
                                             >
                                                 📊 Generar informe
@@ -3179,33 +3270,33 @@ export default function DashboardPage() {
                                     )}
 
                                     {/* KPI cards */}
-                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                                        <div className="rounded-2xl border p-4 bg-slate-50">
-                                            <div className="text-xs text-slate-500">Total SKUs</div>
-                                            <div className="text-2xl font-bold mt-1">{auditByCode.length}</div>
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                                        <div className="rounded-xl border border-slate-200 p-3 bg-white shadow-sm">
+                                            <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Total SKUs</div>
+                                            <div className="text-xl font-black text-slate-900 mt-1">{auditByCode.length}</div>
                                         </div>
-                                        <div className="rounded-2xl border p-4 bg-green-50">
-                                            <div className="text-xs text-green-700">OK (sin diferencia)</div>
-                                            <div className="text-2xl font-bold text-green-800 mt-1">{auditTotals.totalOk}</div>
+                                        <div className="rounded-xl border border-emerald-200 p-3 bg-emerald-50">
+                                            <div className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wide">OK</div>
+                                            <div className="text-xl font-black text-emerald-800 mt-1">{auditTotals.totalOk}</div>
                                         </div>
-                                        <div className="rounded-2xl border p-4 bg-red-50">
-                                            <div className="text-xs text-red-700">Faltantes</div>
-                                            <div className="text-2xl font-bold text-red-700 mt-1">{auditTotals.totalFaltantes}</div>
+                                        <div className="rounded-xl border border-red-200 p-3 bg-red-50">
+                                            <div className="text-[10px] text-red-600 font-semibold uppercase tracking-wide">Faltantes</div>
+                                            <div className="text-xl font-black text-red-700 mt-1">{auditTotals.totalFaltantes}</div>
                                         </div>
-                                        <div className="rounded-2xl border p-4 bg-blue-50">
-                                            <div className="text-xs text-blue-700">Sobrantes</div>
-                                            <div className="text-2xl font-bold text-blue-700 mt-1">{auditTotals.totalSobrantes}</div>
+                                        <div className="rounded-xl border border-blue-200 p-3 bg-blue-50">
+                                            <div className="text-[10px] text-blue-600 font-semibold uppercase tracking-wide">Sobrantes</div>
+                                            <div className="text-xl font-black text-blue-700 mt-1">{auditTotals.totalSobrantes}</div>
                                         </div>
-                                        <div className="rounded-2xl border p-4 bg-orange-50">
-                                            <div className="text-xs text-orange-700">No contados</div>
-                                            <div className="text-2xl font-bold text-orange-700 mt-1">{auditTotals.totalNoContado}</div>
+                                        <div className="rounded-xl border border-orange-200 p-3 bg-orange-50">
+                                            <div className="text-[10px] text-orange-600 font-semibold uppercase tracking-wide">No contados</div>
+                                            <div className="text-xl font-black text-orange-700 mt-1">{auditTotals.totalNoContado}</div>
                                         </div>
                                     </div>
 
-                                    <div className="rounded-2xl border p-4 bg-amber-50 flex items-center justify-between gap-3">
+                                    <div className="rounded-xl border border-slate-200 p-4 bg-white flex items-center justify-between gap-3 shadow-sm">
                                         <div>
-                                            <div className="text-xs text-amber-700 font-semibold">DIFERENCIA VALORIZADA TOTAL (filtrado)</div>
-                                            <div className={`text-2xl font-bold mt-1 ${auditTotals.totalValuedDiff < 0 ? "text-red-700" : auditTotals.totalValuedDiff > 0 ? "text-blue-700" : "text-green-700"}`}>
+                                            <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Diferencia valorizada total (filtrado)</div>
+                                            <div className={`text-2xl font-black mt-1 ${auditTotals.totalValuedDiff < 0 ? "text-red-600" : auditTotals.totalValuedDiff > 0 ? "text-blue-600" : "text-emerald-600"}`}>
                                                 {formatMoney(auditTotals.totalValuedDiff)}
                                             </div>
                                         </div>
@@ -3213,15 +3304,15 @@ export default function DashboardPage() {
                                     </div>
 
                                     {/* Filtros */}
-                                    <div className="flex flex-col sm:flex-row gap-3">
+                                    <div className="flex flex-col sm:flex-row gap-2">
                                         <input
-                                            className="flex-1 border rounded-2xl p-3 text-sm"
+                                            className="flex-1 border border-slate-200 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                                             placeholder="Buscar por SKU o descripción..."
                                             value={auditSearchText}
                                             onChange={(e) => setAuditSearchText(e.target.value)}
                                         />
                                         <select
-                                            className="border rounded-2xl p-3 text-sm"
+                                            className="border border-slate-200 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
                                             value={auditStatusFilter}
                                             onChange={(e) => setAuditStatusFilter(e.target.value)}
                                         >
@@ -3234,24 +3325,24 @@ export default function DashboardPage() {
                                     </div>
 
                                     {/* Tabla resumen */}
-                                    <div className="overflow-auto rounded-2xl border">
+                                    <div className="overflow-auto rounded-xl border border-slate-200">
                                         <table className="w-full text-xs md:text-sm">
-                                            <thead className="bg-slate-100 sticky top-0">
+                                            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
                                                 <tr>
-                                                    <th className="p-3 border text-left">SKU</th>
-                                                    <th className="p-3 border text-left">Descripción</th>
-                                                    <th className="p-3 border text-center">UM</th>
-                                                    <th className="p-3 border text-center">Registros</th>
-                                                    <th className="p-3 border text-center">Stock sistema</th>
-                                                    <th className="p-3 border text-center">Stock contado</th>
-                                                    <th className="p-3 border text-center">Dif. unidad</th>
-                                                    <th className="p-3 border text-center">Costo unit.</th>
-                                                    <th className="p-3 border text-center">Dif. valorizada</th>
-                                                    <th className="p-3 border text-center">Status</th>
-                                                    <th className="p-3 border text-left min-w-[160px]">Observación</th>
+                                                    <th className="p-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wide">SKU</th>
+                                                    <th className="p-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Descripción</th>
+                                                    <th className="p-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wide">UM</th>
+                                                    <th className="p-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Registros</th>
+                                                    <th className="p-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Stock sis.</th>
+                                                    <th className="p-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Contado</th>
+                                                    <th className="p-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Dif. uds.</th>
+                                                    <th className="p-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Costo unit.</th>
+                                                    <th className="p-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Dif. valor.</th>
+                                                    <th className="p-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                                                    <th className="p-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wide min-w-[160px]">Observación</th>
                                                 </tr>
                                             </thead>
-                                            <tbody>
+                                            <tbody className="divide-y divide-slate-50">
                                                 {filteredAudit.map((row) => (
                                                     <tr
                                                         key={row.sku}
@@ -3261,25 +3352,25 @@ export default function DashboardPage() {
                                                                 : row.status_resumen === "FALTANTE"
                                                                 ? "bg-red-50"
                                                                 : row.status_resumen === "SOBRANTE"
-                                                                ? "bg-blue-50"
-                                                                : "bg-green-50"
+                                                                ? "bg-blue-50/40"
+                                                                : ""
                                                         }
                                                     >
-                                                        <td className="p-3 border font-medium">{row.sku}</td>
-                                                        <td className="p-3 border">{row.description}</td>
-                                                        <td className="p-3 border text-center">{row.unit}</td>
-                                                        <td className="p-3 border text-center">{row.record_count}</td>
-                                                        <td className="p-3 border text-center">{row.system_stock}</td>
-                                                        <td className="p-3 border text-center font-semibold">{row.total_counted}</td>
-                                                        <td className="p-3 border text-center">{diffBadge(row.difference)}</td>
-                                                        <td className="p-3 border text-center">{formatMoney(row.cost)}</td>
-                                                        <td className={`p-3 border text-center font-semibold ${row.valued_difference < 0 ? "text-red-700" : row.valued_difference > 0 ? "text-blue-700" : "text-green-700"}`}>
+                                                        <td className="p-3 font-semibold text-slate-800">{row.sku}</td>
+                                                        <td className="p-3 text-slate-600 text-xs max-w-[200px] truncate">{row.description}</td>
+                                                        <td className="p-3 text-center text-slate-500">{row.unit}</td>
+                                                        <td className="p-3 text-center text-slate-500">{row.record_count}</td>
+                                                        <td className="p-3 text-center">{row.system_stock}</td>
+                                                        <td className="p-3 text-center font-semibold">{row.total_counted}</td>
+                                                        <td className="p-3 text-center">{diffBadge(row.difference)}</td>
+                                                        <td className="p-3 text-center text-slate-500">{formatMoney(row.cost)}</td>
+                                                        <td className={`p-3 text-center font-semibold ${row.valued_difference < 0 ? "text-red-600" : row.valued_difference > 0 ? "text-blue-600" : "text-emerald-600"}`}>
                                                             {formatMoney(row.valued_difference)}
                                                         </td>
-                                                        <td className="p-3 border text-center">
+                                                        <td className="p-3 text-center">
                                                             <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${
                                                                 row.status_resumen === "OK"
-                                                                    ? "bg-green-100 text-green-700"
+                                                                    ? "bg-emerald-100 text-emerald-700"
                                                                     : row.status_resumen === "FALTANTE"
                                                                     ? "bg-red-100 text-red-700"
                                                                     : row.status_resumen === "SOBRANTE"
@@ -3289,9 +3380,9 @@ export default function DashboardPage() {
                                                                 {row.status_resumen}
                                                             </span>
                                                         </td>
-                                                        <td className="p-2 border">
+                                                        <td className="p-2">
                                                             <input
-                                                                className="w-full text-xs border border-transparent rounded-lg px-2 py-1.5 bg-transparent hover:bg-white hover:border-slate-300 focus:bg-white focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300 transition placeholder-slate-300"
+                                                                className="w-full text-xs border border-transparent rounded-lg px-2 py-1.5 bg-transparent hover:bg-white hover:border-slate-200 focus:bg-white focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200 transition placeholder-slate-300"
                                                                 placeholder="Agregar observación..."
                                                                 value={auditObservations[row.sku] || ""}
                                                                 onChange={(e) => setAuditObservations(prev => ({ ...prev, [row.sku]: e.target.value }))}
@@ -3300,29 +3391,29 @@ export default function DashboardPage() {
                                                     </tr>
                                                 ))}
                                                 {filteredAudit.length > 0 && (
-                                                    <tr className="bg-slate-200 font-bold">
-                                                        <td className="p-3 border" colSpan={3}>TOTAL ({filteredAudit.length} SKUs)</td>
-                                                        <td className="p-3 border text-center">{filteredAudit.reduce((s, r) => s + r.record_count, 0)}</td>
-                                                        <td className="p-3 border text-center">{filteredAudit.reduce((s, r) => s + r.system_stock, 0)}</td>
-                                                        <td className="p-3 border text-center">{filteredAudit.reduce((s, r) => s + r.total_counted, 0)}</td>
-                                                        <td className="p-3 border text-center">{diffBadge(filteredAudit.reduce((s, r) => s + r.difference, 0))}</td>
-                                                        <td className="p-3 border text-center">—</td>
-                                                        <td className={`p-3 border text-center ${auditTotals.totalValuedDiff < 0 ? "text-red-700" : auditTotals.totalValuedDiff > 0 ? "text-blue-700" : "text-green-700"}`}>
+                                                    <tr className="bg-slate-100 font-bold text-xs border-t-2 border-slate-300">
+                                                        <td className="p-3" colSpan={3}>TOTAL ({filteredAudit.length} SKUs)</td>
+                                                        <td className="p-3 text-center">{filteredAudit.reduce((s, r) => s + r.record_count, 0)}</td>
+                                                        <td className="p-3 text-center">{filteredAudit.reduce((s, r) => s + r.system_stock, 0)}</td>
+                                                        <td className="p-3 text-center">{filteredAudit.reduce((s, r) => s + r.total_counted, 0)}</td>
+                                                        <td className="p-3 text-center">{diffBadge(filteredAudit.reduce((s, r) => s + r.difference, 0))}</td>
+                                                        <td className="p-3 text-center text-slate-400">—</td>
+                                                        <td className={`p-3 text-center font-black ${auditTotals.totalValuedDiff < 0 ? "text-red-600" : auditTotals.totalValuedDiff > 0 ? "text-blue-600" : "text-emerald-600"}`}>
                                                             {formatMoney(auditTotals.totalValuedDiff)}
                                                         </td>
-                                                        <td className="p-3 border text-center text-xs">
+                                                        <td className="p-3 text-center text-slate-500">
                                                             ✅{auditTotals.totalOk} 📉{auditTotals.totalFaltantes} 📈{auditTotals.totalSobrantes} 🟠{auditTotals.totalNoContado}
                                                         </td>
-                                                        <td className="p-3 border text-center text-xs text-slate-400">
+                                                        <td className="p-3 text-center text-slate-400">
                                                             {Object.values(auditObservations).filter(Boolean).length} obs.
                                                         </td>
                                                     </tr>
                                                 )}
                                                 {filteredAudit.length === 0 && (
                                                     <tr>
-                                                        <td className="p-6 border text-center text-slate-400" colSpan={11}>
+                                                        <td className="p-8 text-center text-slate-400 text-sm" colSpan={11}>
                                                             {auditLoading
-                                                                ? "Cargando datos..."
+                                                                ? "Consultando base de datos..."
                                                                 : auditByCode.length === 0
                                                                 ? "No hay registros contados aún."
                                                                 : "Sin resultados para el filtro seleccionado."}
@@ -3334,44 +3425,53 @@ export default function DashboardPage() {
                                     </div>
                                 </div>
                             )}
-                        </section>
+                            </div>
+                        </div>{/* end tabla con pestañas */}
                             </>
                         )}
+
                     </>
                 )}
 
                 {/* ── TAB ADMIN ────────────────────────────────────────────────── */}
                 {activeTab === "admin" && user.role === "Administrador" && (
                     <>
-                        <section className="bg-white rounded-3xl p-6 shadow space-y-6">
-                            <div>
-                                <h2 className="text-2xl font-bold text-slate-900">Módulo Administrador</h2>
-                                <p className="text-slate-600 mt-1">Crea inventarios, carga maestros y administra usuarios.</p>
-                            </div>
-                            <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
-                                <div className="rounded-2xl border p-5 bg-slate-50"><div className="text-sm text-slate-500">Inventarios</div><div className="text-2xl font-bold mt-1">{inventories.length}</div></div>
-                                <div className="rounded-2xl border p-5 bg-slate-50"><div className="text-sm text-slate-500">Productos</div><div className="text-2xl font-bold mt-1">{totalProductCount.toLocaleString()}</div></div>
-                                <div className="rounded-2xl border p-5 bg-slate-50"><div className="text-sm text-slate-500">Usuarios</div><div className="text-2xl font-bold mt-1">{users.length}</div></div>
-                                <div className="rounded-2xl border p-5 bg-slate-50"><div className="text-sm text-slate-500">Registros</div><div className="text-2xl font-bold mt-1">{records.length}</div></div>
-                            </div>
-                        </section>
+                        {/* Header admin */}
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-900">Administrador del sistema</h2>
+                            <p className="text-sm text-slate-500 mt-0.5">Inventarios, maestros, usuarios y configuración · <span className="font-semibold text-slate-700">{currentInventory?.name || "—"}</span></p>
+                        </div>
 
-                        <section className="grid lg:grid-cols-2 gap-6">
-                            <div className="bg-white rounded-3xl p-6 shadow space-y-4">
-                                <h3 className="text-xl font-bold text-slate-900">Crear inventario</h3>
-                                <input className="w-full border rounded-2xl p-3" placeholder="Nombre del inventario" value={newInventoryName} onChange={(e) => setNewInventoryName(e.target.value)} />
-                                <input className="w-full border rounded-2xl p-3" placeholder="Código corto (opcional)" value={newInventoryCode} onChange={(e) => setNewInventoryCode(e.target.value)} />
-                                <button className="px-4 py-3 rounded-2xl bg-slate-900 text-white font-semibold" onClick={createInventory}>Crear inventario</button>
+                        {/* KPI Cards admin */}
+                        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm"><div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Inventarios</div><div className="text-2xl font-black text-slate-900">{inventories.length}</div></div>
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm"><div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Productos</div><div className="text-2xl font-black text-slate-900">{totalProductCount.toLocaleString()}</div></div>
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm"><div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Usuarios</div><div className="text-2xl font-black text-slate-900">{users.length}</div></div>
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm"><div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Registros</div><div className="text-2xl font-black text-slate-900">{records.length}</div></div>
+                        </div>
+
+                        <section className="grid lg:grid-cols-2 gap-4">
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+                                <div className="border-b border-slate-100 pb-3 mb-1">
+                                    <h3 className="text-sm font-bold text-slate-900">Crear inventario</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Agrega un nuevo inventario al sistema</p>
+                                </div>
+                                <input className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="Nombre del inventario" value={newInventoryName} onChange={(e) => setNewInventoryName(e.target.value)} />
+                                <input className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="Código corto (opcional)" value={newInventoryCode} onChange={(e) => setNewInventoryCode(e.target.value)} />
+                                <button className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm w-full transition" onClick={createInventory}>Crear inventario</button>
                             </div>
 
                             {/* Crear usuario individual */}
-                            <div className="bg-white rounded-3xl p-6 shadow space-y-4">
-                                <h3 className="text-xl font-bold text-slate-900">Crear usuario individual</h3>
-                                <input className="w-full border rounded-2xl p-3" placeholder="ID de usuario" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} />
-                                <input className="w-full border rounded-2xl p-3" placeholder="Nombre completo" value={newFullName} onChange={(e) => setNewFullName(e.target.value)} />
+                            <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+                                <div className="border-b border-slate-100 pb-3 mb-1">
+                                    <h3 className="text-sm font-bold text-slate-900">Crear usuario individual</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Agrega un usuario manualmente</p>
+                                </div>
+                                <input className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="ID de usuario" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} />
+                                <input className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="Nombre completo" value={newFullName} onChange={(e) => setNewFullName(e.target.value)} />
                                 <div className="flex gap-2">
-                                    <input className="w-full border rounded-2xl p-3" placeholder="Clave" type={showNewPassword ? "text" : "password"} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-                                    <button type="button" className="px-4 rounded-2xl border" onClick={() => setShowNewPassword(!showNewPassword)}>{showNewPassword ? "Ocultar" : "Ver"}</button>
+                                    <input className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="Clave" type={showNewPassword ? "text" : "password"} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                                    <button type="button" className="px-4 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50" onClick={() => setShowNewPassword(!showNewPassword)}>{showNewPassword ? "Ocultar" : "Ver"}</button>
                                 </div>
 
                                 <div>
@@ -3414,82 +3514,83 @@ export default function DashboardPage() {
                                     <PermissionsCheckboxes perms={newPermissions} onChange={setNewPermissions} isAdmin={newIsAdmin} />
                                 </div>
 
-                                <button className="px-4 py-3 rounded-2xl bg-slate-900 text-white font-semibold w-full" onClick={createUser}>Crear usuario</button>
+                                <button className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm w-full transition" onClick={createUser}>Crear usuario</button>
                             </div>
                         </section>
 
-                        <section className="bg-white rounded-3xl p-6 shadow space-y-4">
-                            <div>
-                                <h3 className="text-xl font-bold text-slate-900">Inventarios</h3>
-                                <p className="text-slate-600 text-sm mt-1">Si tiene información, se archiva. Si está vacío, se elimina.</p>
+                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100">
+                                <h3 className="text-sm font-bold text-slate-900">Inventarios</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Si tiene datos se archiva, si está vacío se elimina.</p>
                             </div>
-                            <div className="overflow-auto rounded-2xl border">
+                            <div className="overflow-auto">
                                 <table className="w-full text-sm">
-                                    <thead className="bg-slate-100">
+                                    <thead className="bg-slate-50 border-b border-slate-100">
                                         <tr>
-                                            <th className="p-3 border text-left">Nombre</th>
-                                            <th className="p-3 border text-left">Código</th>
-                                            <th className="p-3 border text-left">Estado</th>
-                                            <th className="p-3 border text-left">Acción</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Nombre</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Código</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Acción</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody className="divide-y divide-slate-50">
                                         {allInventories.map((inv) => {
                                             const isGeneral = normalizeText(inv.code) === "general";
                                             const isSelected = inv.id === selectedInventoryId;
                                             const isProcessing = processingInventoryId === inv.id;
                                             return (
-                                                <tr key={inv.id} className={!inv.is_active ? "bg-slate-50 opacity-70" : ""}>
-                                                    <td className="p-3 border">{inv.name}</td>
-                                                    <td className="p-3 border">{inv.code}</td>
-                                                    <td className="p-3 border">
+                                                <tr key={inv.id} className={!inv.is_active ? "opacity-50" : "hover:bg-slate-50/50"}>
+                                                    <td className="p-3 font-semibold text-slate-800">{inv.name}</td>
+                                                    <td className="p-3 text-slate-500 font-mono text-xs">{inv.code}</td>
+                                                    <td className="p-3">
                                                         {!inv.is_active
-                                                            ? <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-200 text-slate-600">Archivado</span>
+                                                            ? <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">Archivado</span>
                                                             : isSelected
-                                                            ? <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">Activo seleccionado</span>
+                                                            ? <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">● Seleccionado</span>
                                                             : <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">Activo</span>}
                                                     </td>
-                                                    <td className="p-3 border">
+                                                    <td className="p-3">
                                                         {!inv.is_active ? (
                                                             <button
-                                                                className={`px-4 py-2 rounded-xl text-white ${isProcessing ? "bg-slate-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"}`}
+                                                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white ${isProcessing ? "bg-slate-300 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"}`}
                                                                 onClick={() => reactivateInventory(inv)}
                                                                 disabled={isProcessing}
                                                             >
                                                                 {isProcessing ? "Procesando..." : "Reactivar"}
                                                             </button>
                                                         ) : (
-                                                            <button className={`px-4 py-2 rounded-xl text-white ${isGeneral || isSelected || isProcessing ? "bg-slate-400 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"}`} onClick={() => manageInventory(inv)} disabled={isGeneral || isSelected || isProcessing}>
-                                                                {isProcessing ? "Procesando..." : "Eliminar / Archivar"}
+                                                            <button className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white ${isGeneral || isSelected || isProcessing ? "bg-slate-300 cursor-not-allowed" : "bg-red-500 hover:bg-red-600"}`} onClick={() => manageInventory(inv)} disabled={isGeneral || isSelected || isProcessing}>
+                                                                {isProcessing ? "Procesando..." : "Archivar / Eliminar"}
                                                             </button>
                                                         )}
                                                     </td>
                                                 </tr>
                                             );
                                         })}
-                                        {allInventories.length === 0 && (<tr><td className="p-4 border text-center text-slate-500" colSpan={4}>No hay inventarios.</td></tr>)}
+                                        {allInventories.length === 0 && (<tr><td className="p-4 text-center text-slate-400 text-sm" colSpan={4}>No hay inventarios.</td></tr>)}
                                     </tbody>
                                 </table>
                             </div>
-                        </section>
+                        </div>
 
-                        <section className="bg-white rounded-3xl p-6 shadow space-y-4">
-                            <h3 className="text-xl font-bold text-slate-900">Insertar usuarios masivos</h3>
-                            <p className="text-slate-600 text-sm">Plantilla: ID, CLAVE, NOMBRE, ROL</p>
+                        <div className="grid lg:grid-cols-2 gap-4">
+                        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+                            <div className="border-b border-slate-100 pb-3 mb-1">
+                                <h3 className="text-sm font-bold text-slate-900">Insertar usuarios masivos</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Plantilla: ID, CLAVE, NOMBRE, ROL</p>
+                            </div>
                             <input ref={usersInputRef} type="file" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0] || null; setUsersFile(f); setUsersFileName(f ? f.name : ""); }} />
-                            <div className="text-sm text-slate-500">{usersFileName ? `📄 ${usersFileName}` : "Ningún archivo seleccionado"}</div>
-                            <button className="px-4 py-3 rounded-2xl bg-slate-900 text-white font-semibold" type="button" onClick={uploadUsers}>Insertar usuarios</button>
-                        </section>
+                            <div className="text-xs text-slate-500">{usersFileName ? `📄 ${usersFileName}` : "Ningún archivo seleccionado"}</div>
+                            <button className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-sm transition" type="button" onClick={uploadUsers}>Insertar usuarios</button>
+                        </div>
 
                         {/* ── CATÁLOGO GLOBAL DE BARCODES ──────────────────── */}
-                        <section className="bg-white rounded-3xl p-6 shadow space-y-4">
-                            <div>
-                                <h3 className="text-xl font-bold text-slate-900">📦 Catálogo global de códigos de barra</h3>
-                                <p className="text-slate-600 text-sm mt-1">
-                                    Aplica a <b>todos los inventarios</b>. Sube una sola vez y actualiza cuando lo necesites.
-                                    Al escanear un código, el sistema lo busca aquí, obtiene el SKU y lo vincula al producto del inventario activo.
+                        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+                            <div className="border-b border-slate-100 pb-3 mb-1">
+                                <h3 className="text-sm font-bold text-slate-900">📦 Catálogo global de códigos de barra</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                    Aplica a todos los inventarios. Columnas requeridas: <b>SKU</b> y <b>CODIGO_BARRA</b>.
                                 </p>
-                                <p className="text-xs text-slate-400 mt-1">Columnas requeridas: <b>SKU</b> y <b>CODIGO_BARRA</b>. Puede tener múltiples filas por SKU.</p>
                             </div>
                             <div className="grid md:grid-cols-2 gap-6">
                                 <div className="space-y-3">
@@ -3527,69 +3628,119 @@ export default function DashboardPage() {
                                     )}
                                 </div>
                             </div>
-                        </section>
+                        </div>
+                        </div>{/* end grid lg:grid-cols-2 */}
+
+                        {/* ── CATÁLOGO GLOBAL DE BARCODES ──────────────────── */}
+                        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+                            <div className="border-b border-slate-100 pb-3 mb-1">
+                                <h3 className="text-sm font-bold text-slate-900">📦 Catálogo global de códigos de barra</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                    Aplica a todos los inventarios. Columnas requeridas: <b>SKU</b> y <b>CODIGO_BARRA</b>.
+                                </p>
+                            </div>
+                            <div className="grid md:grid-cols-2 gap-6">
+                                <div className="space-y-3">
+                                    <input
+                                        ref={globalBarcodesInputRef}
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        onChange={(e) => { const f = e.target.files?.[0] || null; setGlobalBarcodesFile(f); setGlobalBarcodesFileName(f ? f.name : ""); }}
+                                    />
+                                    <div className="text-xs text-slate-500">{globalBarcodesFileName ? `📄 ${globalBarcodesFileName}` : "Ningún archivo seleccionado"}</div>
+                                    {uploadProgress && (
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-sm font-semibold text-slate-700"><span>{uploadProgress?.step}</span><span>{uploadProgress?.pct ?? 0}%</span></div>
+                                            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden"><div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress?.pct ?? 0}%` }} /></div>
+                                        </div>
+                                    )}
+                                    <button
+                                        className={`px-4 py-2.5 rounded-xl font-semibold text-sm text-white transition ${uploadProgress ? "bg-slate-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"}`}
+                                        type="button"
+                                        onClick={uploadGlobalBarcodes}
+                                        disabled={!!uploadProgress}
+                                    >
+                                        {uploadProgress ? "Subiendo..." : "Subir / Actualizar catálogo global"}
+                                    </button>
+                                </div>
+                                <div className="bg-slate-50 rounded-xl border border-slate-100 p-4 space-y-2">
+                                    <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">¿Cómo funciona?</div>
+                                    <ul className="text-slate-500 space-y-1.5 text-xs list-none">
+                                        <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">→</span> Sube una vez con todos los SKUs y sus códigos de barra</li>
+                                        <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">→</span> Al escanear, el sistema busca el SKU y lo vincula al inventario activo</li>
+                                        <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">→</span> Puedes actualizar sin afectar ningún inventario</li>
+                                    </ul>
+                                    {globalBarcodesCount !== null && (
+                                        <div className="mt-2 text-blue-700 font-semibold text-xs bg-blue-50 rounded-lg px-3 py-2">✅ Último upload: {globalBarcodesCount?.toLocaleString()} códigos</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
 
                         {/* Tabla usuarios */}
-                        <section className="bg-white rounded-3xl p-6 shadow space-y-4">
-                            <h3 className="text-xl font-bold text-slate-900">Usuarios registrados</h3>
-                            <div className="overflow-auto rounded-2xl border">
+                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100">
+                                <h3 className="text-sm font-bold text-slate-900">Usuarios registrados</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">{users.length} usuario{users.length !== 1 ? "s" : ""} en el sistema</p>
+                            </div>
+                            <div className="overflow-auto">
                                 <table className="w-full text-sm">
-                                    <thead className="bg-slate-100">
+                                    <thead className="bg-slate-50 border-b border-slate-100">
                                         <tr>
-                                            <th className="p-3 border">ID</th>
-                                            <th className="p-3 border">Nombre</th>
-                                            <th className="p-3 border">Roles</th>
-                                            <th className="p-3 border">Inventario</th>
-                                            <th className="p-3 border">Permisos extra</th>
-                                            <th className="p-3 border">Activo</th>
-                                            <th className="p-3 border">Acciones</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">ID</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Nombre</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Roles</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Inventario</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Permisos extra</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Activo</th>
+                                            <th className="p-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Acciones</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody className="divide-y divide-slate-50">
                                         {users.map((u) => {
                                             const displayRoles: Role[] = u.roles && u.roles.length > 0 ? u.roles : [u.role];
                                             return (
-                                                <tr key={u.id}>
-                                                    <td className="p-3 border font-medium">{u.username}</td>
-                                                    <td className="p-3 border">{u.full_name}</td>
-                                                    <td className="p-3 border">
+                                                <tr key={u.id} className="hover:bg-slate-50/50">
+                                                    <td className="p-3 font-mono text-xs text-slate-500 font-semibold">{u.username}</td>
+                                                    <td className="p-3 font-semibold text-slate-800">{u.full_name}</td>
+                                                    <td className="p-3">
                                                         <div className="flex flex-wrap gap-1">
                                                             {displayRoles.map((r) => {
                                                                 const roleBadge = r === "Administrador" ? "bg-purple-100 text-purple-700" :
                                                                                   r === "Validador"     ? "bg-blue-100 text-blue-700" :
-                                                                                                         "bg-slate-100 text-slate-700";
+                                                                                                         "bg-slate-100 text-slate-600";
                                                                 return (
                                                                     <span key={r} className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${roleBadge}`}>{r}</span>
                                                                 );
                                                             })}
                                                         </div>
                                                     </td>
-                                                    <td className="p-3 border">{getPrimaryRole(u) === "Administrador" ? "Todos" : allInventories.find((inv) => inv.id === u.inventory_id)?.name || <span className="text-slate-400 italic">Sin asignar</span>}</td>
-                                                    <td className="p-3 border">
+                                                    <td className="p-3 text-xs text-slate-600">{getPrimaryRole(u) === "Administrador" ? <span className="text-purple-600 font-semibold">Todos</span> : allInventories.find((inv) => inv.id === u.inventory_id)?.name || <span className="text-slate-400 italic">Sin asignar</span>}</td>
+                                                    <td className="p-3">
                                                         <div className="flex flex-wrap gap-1 text-xs">
-                                                            {u.can_access_any_inventory && <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">🌐 Todos inv.</span>}
-                                                            {u.can_see_system_stock && <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Stock sis.</span>}
-                                                            {u.can_see_cost && <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Costo</span>}
-                                                            {u.can_see_valued_difference && <span className="bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">Dif. valor.</span>}
+                                                            {u.can_access_any_inventory && <span className="bg-purple-50 text-purple-600 border border-purple-200 px-1.5 py-0.5 rounded-md">🌐 Multi-inv.</span>}
+                                                            {u.can_see_system_stock && <span className="bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-md">Stock sis.</span>}
+                                                            {u.can_see_cost && <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md">Costo</span>}
+                                                            {u.can_see_valued_difference && <span className="bg-sky-50 text-sky-700 border border-sky-200 px-1.5 py-0.5 rounded-md">Dif. val.</span>}
                                                             {!u.can_see_system_stock && !u.can_see_cost && !u.can_see_valued_difference && !u.can_access_any_inventory && getPrimaryRole(u) !== "Administrador" && getPrimaryRole(u) !== "Validador" && (
-                                                                <span className="text-slate-400 italic">Ninguno</span>
+                                                                <span className="text-slate-400 italic text-xs">Ninguno</span>
                                                             )}
                                                             {(getPrimaryRole(u) === "Administrador" || getPrimaryRole(u) === "Validador") && (
                                                                 <span className="text-slate-400 italic text-xs">Acceso total</span>
                                                             )}
                                                         </div>
                                                     </td>
-                                                    <td className="p-3 border">
-                                                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${u.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                                                            {u.is_active ? "Activo" : "Inactivo"}
+                                                    <td className="p-3">
+                                                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${u.is_active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
+                                                            {u.is_active ? "● Activo" : "Inactivo"}
                                                         </span>
                                                     </td>
-                                                    <td className="p-3 border">
-                                                        <div className="flex gap-2">
-                                                            <button className="px-3 py-1.5 rounded-xl border text-xs font-semibold hover:bg-slate-50" onClick={() => openEditUser(u)}>
-                                                                ✏️ Editar
+                                                    <td className="p-3">
+                                                        <div className="flex gap-1.5">
+                                                            <button className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition" onClick={() => openEditUser(u)}>
+                                                                Editar
                                                             </button>
-                                                            <button className={`px-3 py-1.5 rounded-xl text-white text-xs font-semibold ${u.id === user.id ? "bg-slate-300 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"}`} onClick={() => deleteUser(u)} disabled={u.id === user.id}>
+                                                            <button className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold transition ${u.id === user.id ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-red-500 hover:bg-red-600"}`} onClick={() => deleteUser(u)} disabled={u.id === user.id}>
                                                                 Eliminar
                                                             </button>
                                                         </div>
@@ -3597,35 +3748,35 @@ export default function DashboardPage() {
                                                 </tr>
                                             );
                                         })}
-                                        {users.length === 0 && (<tr><td className="p-4 border text-center text-slate-500" colSpan={7}>No hay usuarios todavía.</td></tr>)}
+                                        {users.length === 0 && (<tr><td className="p-6 text-center text-slate-400 text-sm" colSpan={7}>No hay usuarios todavía.</td></tr>)}
                                     </tbody>
                                 </table>
                             </div>
-                        </section>
+                        </div>
                     </>
                 )}
 
                 {/* ── MODAL EDITAR USUARIO ─────────────────────────────────── */}
                 {editingUser && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-                            <div>
-                                <h3 className="text-2xl font-bold text-slate-900">Editar usuario</h3>
-                                <p className="text-slate-500 text-sm mt-1">
-                                    <b>{editingUser.username}</b> — {editingUser.full_name}
+                    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto border border-slate-200">
+                            <div className="border-b border-slate-100 pb-4">
+                                <h3 className="text-lg font-bold text-slate-900">Editar usuario</h3>
+                                <p className="text-slate-400 text-xs mt-1">
+                                    <span className="font-mono font-semibold text-slate-600">{editingUser.username}</span> — {editingUser.full_name}
                                 </p>
                             </div>
 
                             <div>
-                                <label className="block font-semibold mb-2">Roles <span className="text-slate-400 font-normal text-xs">(selecciona uno o más)</span></label>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Roles <span className="text-slate-300 font-normal">(selecciona uno o más)</span></label>
                                 <RoleCheckboxes selected={editUserRoles} onChange={setEditUserRoles} />
                                 <p className="text-xs text-slate-400 mt-2">Rol principal: <b>{editUserRoles.includes("Administrador") ? "Administrador" : editUserRoles.includes("Validador") ? "Validador" : "Operario"}</b></p>
                             </div>
 
                             {!editingIsAdmin && !editUserCanAccessAnyInventory && (
                                 <div>
-                                    <label className="block font-semibold mb-2">Inventario asignado</label>
-                                    <select className="w-full border rounded-2xl p-3" value={editUserInventoryId} onChange={e => setEditUserInventoryId(e.target.value)}>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Inventario asignado</label>
+                                    <select className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" value={editUserInventoryId} onChange={e => setEditUserInventoryId(e.target.value)}>
                                         <option value="">Sin asignar</option>
                                         {allInventories.filter(inv => inv.is_active).map(inv => (
                                             <option key={inv.id} value={inv.id}>{inv.name}</option>
@@ -3634,23 +3785,23 @@ export default function DashboardPage() {
                                 </div>
                             )}
                             {!editingIsAdmin && editUserCanAccessAnyInventory && (
-                                <div className="rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-700">
+                                <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700 font-semibold">
                                     ✓ Este usuario tiene acceso libre a todos los inventarios.
                                 </div>
                             )}
 
                             <div>
-                                <label className="block font-semibold mb-2">Permisos adicionales <span className="text-slate-400 font-normal text-xs">(datos sensibles)</span></label>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Permisos adicionales <span className="text-slate-300 font-normal">(datos sensibles)</span></label>
                                 <PermissionsCheckboxes perms={editUserPermissions} onChange={setEditUserPermissions} isAdmin={editingIsAdmin} />
                             </div>
 
                             {!editingIsAdmin && (
                                 <div>
-                                    <label className="block font-semibold mb-2">Acceso a inventarios</label>
-                                    <label className="flex items-center gap-3 cursor-pointer">
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Acceso a inventarios</label>
+                                    <label className="flex items-center gap-3 cursor-pointer bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
                                         <input
                                             type="checkbox"
-                                            className="w-4 h-4 accent-slate-800"
+                                            className="w-4 h-4 accent-blue-600"
                                             checked={editUserCanAccessAnyInventory}
                                             onChange={(e) => {
                                                 setEditUserCanAccessAnyInventory(e.target.checked);
@@ -3659,32 +3810,32 @@ export default function DashboardPage() {
                                         />
                                         <span className="text-sm font-medium text-slate-700">Acceso libre a todos los inventarios</span>
                                     </label>
-                                    <p className="text-xs text-slate-400 mt-1">Permite a este usuario trabajar en cualquier inventario activo (útil para auditores).</p>
+                                    <p className="text-xs text-slate-400 mt-1">Útil para auditores que trabajan en múltiples inventarios.</p>
                                 </div>
                             )}
 
                             <div>
-                                <label className="block font-semibold mb-2">Estado</label>
-                                <div className="flex gap-3">
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Estado</label>
+                                <div className="flex gap-2">
                                     <button
-                                        className={`flex-1 py-2.5 rounded-xl font-semibold text-sm border ${editUserActive ? "bg-green-600 text-white border-green-600" : "bg-white text-slate-700 border-slate-300"}`}
+                                        className={`flex-1 py-2.5 rounded-xl font-semibold text-sm border transition ${editUserActive ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
                                         onClick={() => setEditUserActive(true)}
                                     >
-                                        ✓ Activo
+                                        ● Activo
                                     </button>
                                     <button
-                                        className={`flex-1 py-2.5 rounded-xl font-semibold text-sm border ${!editUserActive ? "bg-red-500 text-white border-red-500" : "bg-white text-slate-700 border-slate-300"}`}
+                                        className={`flex-1 py-2.5 rounded-xl font-semibold text-sm border transition ${!editUserActive ? "bg-red-500 text-white border-red-500" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
                                         onClick={() => setEditUserActive(false)}
                                     >
                                         Inactivo
                                     </button>
                                 </div>
                             </div>
-                            <div className="flex gap-3 pt-1">
-                                <button className="flex-1 px-4 py-3 rounded-2xl bg-slate-900 text-white font-semibold" onClick={saveEditUser}>
+                            <div className="flex gap-2 pt-1 border-t border-slate-100">
+                                <button className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition" onClick={saveEditUser}>
                                     Guardar cambios
                                 </button>
-                                <button className="flex-1 px-4 py-3 rounded-2xl border font-semibold" onClick={() => setEditingUser(null)}>
+                                <button className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 font-semibold text-sm text-slate-600 hover:bg-slate-50 transition" onClick={() => setEditingUser(null)}>
                                     Cancelar
                                 </button>
                             </div>
@@ -3694,11 +3845,11 @@ export default function DashboardPage() {
 
                 {/* ── MODAL EDITAR REGISTRO ──────────────────────────────────── */}
                 {editingRecord && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-3xl p-6 w-full max-w-2xl space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-                            <div>
-                                <h3 className="text-2xl font-bold text-slate-900">Editar registro</h3>
-                                <p className="text-slate-600 text-sm mt-1">El SKU debe existir en el maestro del inventario seleccionado.</p>
+                    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-2xl p-6 w-full max-w-2xl space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto border border-slate-200">
+                            <div className="border-b border-slate-100 pb-4">
+                                <h3 className="text-lg font-bold text-slate-900">Editar registro</h3>
+                                <p className="text-slate-400 text-xs mt-1">El SKU debe existir en el maestro del inventario seleccionado.</p>
                             </div>
                             <div className="grid md:grid-cols-2 gap-4">
                                 <div>
@@ -3742,9 +3893,9 @@ export default function DashboardPage() {
                                         </select>
                                     </div>
                                 )}
-                                <div className="md:col-span-2 flex flex-col sm:flex-row gap-3">
-                                    <button className="px-5 py-3 rounded-2xl bg-slate-900 text-white font-semibold" onClick={saveEdit}>Guardar cambios</button>
-                                    <button className="px-5 py-3 rounded-2xl border font-semibold" onClick={closeEdit}>Cancelar</button>
+                                <div className="md:col-span-2 flex flex-col sm:flex-row gap-2 pt-2 border-t border-slate-100">
+                                    <button className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition" onClick={saveEdit}>Guardar cambios</button>
+                                    <button className="px-5 py-2.5 rounded-xl border border-slate-200 font-semibold text-sm text-slate-600 hover:bg-slate-50 transition" onClick={closeEdit}>Cancelar</button>
                                 </div>
                             </div>
                         </div>
@@ -3753,25 +3904,25 @@ export default function DashboardPage() {
 
                 {/* ── SCANNER OVERLAY ───────────────────────────────────────── */}
                 {scannerTarget && (
-                    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[60]">
-                        <div className="bg-white w-full max-w-lg rounded-3xl p-5 shadow-2xl space-y-4">
-                            <div>
-                                <h3 className="text-xl font-bold text-slate-900">
-                                    {scannerTarget === "product" ? "Escanear producto" : "Escanear ubicación"}
+                    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[60]">
+                        <div className="bg-white w-full max-w-lg rounded-2xl p-5 shadow-2xl space-y-4 border border-slate-200">
+                            <div className="border-b border-slate-100 pb-3">
+                                <h3 className="text-base font-bold text-slate-900">
+                                    {scannerTarget === "product" ? "📷 Escanear producto" : "📷 Escanear ubicación"}
                                 </h3>
-                                <p className="text-sm text-slate-500">
-                                    {scannerTarget === "product" ? "Busca primero por código de barra y si no existe por SKU." : "Escanea o digita la ubicación."}
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                    {scannerTarget === "product" ? "Busca por código de barra; si no existe, por SKU." : "Escanea o digita la ubicación."}
                                 </p>
                             </div>
-                            <div className="rounded-2xl overflow-hidden border bg-black min-h-[260px] flex items-center justify-center">
+                            <div className="rounded-xl overflow-hidden border border-slate-200 bg-black min-h-[260px] flex items-center justify-center">
                                 <div id={scannerContainerId} className="w-full" />
                             </div>
-                            <div className="text-sm text-slate-500">
-                                {scannerRunning ? "Cámara activa. Apunta al código." : "Iniciando cámara..."}
+                            <div className="text-xs text-slate-400 text-center">
+                                {scannerRunning ? "● Cámara activa — apunta al código de barras" : "Iniciando cámara..."}
                             </div>
                             {torchAvailable && (
-                                <button type="button" onClick={toggleTorch} className="w-full px-4 py-3 rounded-2xl bg-slate-900 text-white font-semibold">
-                                    {torchOn ? "Apagar linterna 🔦" : "Prender linterna 🔦"}
+                                <button type="button" onClick={toggleTorch} className="w-full px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-sm transition">
+                                    {torchOn ? "🔦 Apagar linterna" : "🔦 Prender linterna"}
                                 </button>
                             )}
                         </div>
@@ -3781,18 +3932,17 @@ export default function DashboardPage() {
                 {/* ── MODAL GENERAR INFORME ─────────────────────────────────── */}
                 {showReportModal && (
                     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-3xl p-6 w-full max-w-lg space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-                            <div>
-                                <h3 className="text-2xl font-bold text-slate-900">📊 Generar informe completo</h3>
-                                <p className="text-slate-500 text-sm mt-1">
-                                    Se generará un informe HTML con gráficos y dashboards, compatible con Gmail y cualquier navegador.
+                        <div className="bg-white rounded-2xl p-6 w-full max-w-lg space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto border border-slate-200">
+                            <div className="border-b border-slate-100 pb-4">
+                                <h3 className="text-lg font-bold text-slate-900">📊 Generar informe completo</h3>
+                                <p className="text-slate-400 text-xs mt-1">
+                                    Informe HTML con dashboards y gráficos, compatible con Gmail y cualquier navegador.
                                 </p>
                             </div>
 
-                            <div className="rounded-2xl bg-indigo-50 border border-indigo-200 px-4 py-3 text-sm text-indigo-800">
-                                <span className="font-semibold">Inventario:</span> {currentInventory?.name || "—"}
-                                <br/>
-                                <span className="font-semibold">Fecha de auditoría:</span>{" "}
+                            <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-800 space-y-0.5">
+                                <div><span className="font-semibold">Inventario:</span> {currentInventory?.name || "—"}</div>
+                                <div><span className="font-semibold">Fecha de auditoría:</span>{" "}
                                 {(() => {
                                     let d = new Date();
                                     if (records.length > 0) {
@@ -3802,41 +3952,41 @@ export default function DashboardPage() {
                                         }, new Date(records[0].counted_at));
                                     }
                                     return d.toLocaleDateString("es-PE", { year: "numeric", month: "long", day: "numeric" });
-                                })()}
+                                })()}</div>
                             </div>
 
-                            <div className="space-y-4">
+                            <div className="space-y-3">
                                 <div>
-                                    <label className="block font-semibold mb-1.5 text-sm text-slate-700">Nombre de la tienda <span className="text-red-500">*</span></label>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Nombre de la tienda <span className="text-red-400">*</span></label>
                                     <input
-                                        className="w-full border rounded-2xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                        className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                                         placeholder="Ej: Tienda Centro Lima"
                                         value={reportStoreName}
                                         onChange={(e) => setReportStoreName(e.target.value)}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block font-semibold mb-1.5 text-sm text-slate-700">Nombre del líder de tienda <span className="text-red-500">*</span></label>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Líder de tienda <span className="text-red-400">*</span></label>
                                     <input
-                                        className="w-full border rounded-2xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                        className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                                         placeholder="Ej: Juan Pérez"
                                         value={reportStoreLeader}
                                         onChange={(e) => setReportStoreLeader(e.target.value)}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block font-semibold mb-1.5 text-sm text-slate-700">Nombre del asesor de almacén <span className="text-red-500">*</span></label>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Asesor de almacén <span className="text-red-400">*</span></label>
                                     <input
-                                        className="w-full border rounded-2xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                        className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                                         placeholder="Ej: María García"
                                         value={reportWarehouseAdvisor}
                                         onChange={(e) => setReportWarehouseAdvisor(e.target.value)}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block font-semibold mb-1.5 text-sm text-slate-700">Nombre del auditor</label>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Auditor</label>
                                     <input
-                                        className="w-full border rounded-2xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                        className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                                         placeholder="Ej: Carlos López"
                                         value={reportAuditorName}
                                         onChange={(e) => setReportAuditorName(e.target.value)}
@@ -3844,20 +3994,20 @@ export default function DashboardPage() {
                                 </div>
                             </div>
 
-                            <div className="rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
-                                💡 El informe se descargará como archivo <strong>.html</strong>. Puedes abrirlo en tu navegador, imprimirlo o adjuntarlo a un correo en Gmail.
+                            <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-xs text-amber-800">
+                                💡 El informe se descarga como <strong>.html</strong>. Ábrelo en el navegador, imprímelo o adjúntalo en Gmail.
                             </div>
 
-                            <div className="flex gap-3 pt-1">
+                            <div className="flex gap-2 pt-1 border-t border-slate-100">
                                 <button
-                                    className="flex-1 px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition"
                                     onClick={generateAndOpenReport}
                                     disabled={!reportStoreName.trim() || !reportStoreLeader.trim() || !reportWarehouseAdvisor.trim()}
                                 >
                                     📥 Descargar informe
                                 </button>
                                 <button
-                                    className="flex-1 px-4 py-3 rounded-2xl border font-semibold text-sm"
+                                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 font-semibold text-sm text-slate-600 hover:bg-slate-50 transition"
                                     onClick={() => setShowReportModal(false)}
                                 >
                                     Cancelar
